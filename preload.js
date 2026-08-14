@@ -22,6 +22,9 @@ contextBridge.exposeInMainWorld('desktop', {
     decrypt: (b64) => ipcRenderer.invoke('safe-decrypt', b64)
   },
 
+  /* 获取 AI 模型列表（走主进程，规避浏览器 CORS 限制） */
+  aiModels: (payload) => ipcRenderer.invoke('ai-models', payload),
+
   /* WebDAV 同步 */
   webdav: {
     test: (cfg) => ipcRenderer.invoke('webdav-test', cfg),

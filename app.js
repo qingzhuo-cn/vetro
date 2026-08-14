@@ -1234,6 +1234,7 @@ function bindAi() {
   $('#btnUseAsDoc').addEventListener('click', useResultAsDoc);
   $('#btnAiConfig').addEventListener('click', () => switchAiView('config'));
   $('#aiAction').addEventListener('change', updateRunBtnLabel);
+  $('#btnFetchModels').addEventListener('click', fetchModels);
 }
 
 function updateRunBtnLabel() {
@@ -1246,6 +1247,49 @@ function setAiResult(text) {
   const el = $('#aiResult');
   el.textContent = text;
   el.classList.remove('anim'); void el.offsetWidth; el.classList.add('anim');
+}
+
+async function fetchModels() {
+  const endpoint = ($('#cfgEndpoint').value || '').trim().replace(/\/+$/, '');
+  const key = $('#cfgKey').value.trim();
+  if (!endpoint || !key) { toast('请先填写 API 地址和 Key', 'err'); return; }
+  const btn = $('#btnFetchModels');
+  btn.disabled = true;
+  btn.textContent = '获取中…';
+  try {
+    let res;
+    if (window.desktop && window.desktop.aiModels) {
+      res = await window.desktop.aiModels({ endpoint, key });
+    } else {
+      const r = await fetch(endpoint + '/models', { headers: { Authorization: 'Bearer ' + key } });
+      if (!r.ok) {
+        let msg = 'HTTP ' + r.status;
+        try { const j = await r.json(); msg = (j.error && (j.error.message || j.error)) || msg; } catch (e) {}
+        res = { ok: false, error: msg };
+      } else {
+        const d = await r.json();
+        res = { ok: true, models: (d && Array.isArray(d.data) ? d.data : []).map((m) => m && m.id).filter(Boolean).sort() };
+      }
+    }
+    if (!res || !res.ok) { toast('获取模型失败：' + ((res && res.error) || '未知错误'), 'err'); return; }
+    const models = res.models || [];
+    const dl = $('#modelList');
+    dl.innerHTML = '';
+    models.forEach((m) => { const o = document.createElement('option'); o.value = m; dl.appendChild(o); });
+    if (models.length) {
+      if (!$('#cfgModel').value || models.indexOf($('#cfgModel').value.trim()) === -1) {
+        $('#cfgModel').value = models[0];
+      }
+      toast('已获取 ' + models.length + ' 个模型', 'ok');
+    } else {
+      toast('未获取到模型', 'err');
+    }
+  } catch (e) {
+    toast('获取模型失败：' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '获取模型';
+  }
 }
 
 async function testAiConnect() {

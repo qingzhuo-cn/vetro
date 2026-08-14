@@ -137,6 +137,24 @@ ipcMain.handle('safe-decrypt', (_e, b64) => {
   }
 });
 
+/* ===== AI 模型列表（走主进程 fetch，规避浏览器 CORS 限制） ===== */
+ipcMain.handle('ai-models', async (_e, { endpoint, key }) => {
+  try {
+    const url = String(endpoint || '').replace(/\/+$/, '') + '/models';
+    const res = await fetch(url, { headers: { Authorization: 'Bearer ' + String(key || '') } });
+    if (!res.ok) {
+      let msg = 'HTTP ' + res.status;
+      try { const j = await res.json(); msg = (j.error && (j.error.message || j.error)) || msg; } catch (e) {}
+      return { ok: false, error: msg };
+    }
+    const data = await res.json();
+    const models = (data && Array.isArray(data.data) ? data.data : []).map((m) => m && m.id).filter(Boolean).sort();
+    return { ok: true, models };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
 /* ===== WebDAV 客户端（无依赖，基于 Node 内置 fetch） ===== */
 
 function basicAuth(user, pass) {

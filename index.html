@@ -228,7 +228,11 @@
     </div>
     <div class="cfg-group">
       <label class="cfg-label" for="cfgModel">模型</label>
-      <input id="cfgModel" class="cfg-input" value="deepseek-chat" placeholder="deepseek-chat / gpt-4o / ..." spellcheck="false">
+      <div class="cfg-keyrow">
+        <input id="cfgModel" class="cfg-input" list="modelList" value="deepseek-chat" placeholder="deepseek-chat / gpt-4o / ..." spellcheck="false">
+        <button class="btn ghost sm" id="btnFetchModels" title="从 API 获取可用模型列表">获取模型</button>
+      </div>
+      <datalist id="modelList"></datalist>
     </div>
 
     <p class="cfg-note">🔒 API Key 仅保存在本机：桌面版使用系统级加密（Windows DPAPI），浏览器版以混淆形式存储；绝不会被上传到任何服务器。</p>
