@@ -1207,9 +1207,11 @@ function openAi() {
   switchAiView(view);
   $('#cfgEndpoint').value = state.cfg.ai.endpoint || '';
   $('#cfgKey').value = state.cfg.ai.key || '';
-  $('#cfgModel').value = state.cfg.ai.model || 'deepseek-chat';
+  setModelValue(state.cfg.ai.model || 'deepseek-chat');
   applyAiStatus();
   captureEditorSelection();
+  const box = $('#aiSelText');
+  if (box) box.value = editorSelection.text;
   updateAiSelHint();
   updateRunBtnLabel();
   $('#aiBackdrop').classList.add('show');
@@ -1244,11 +1246,12 @@ function bindAi() {
   $('#btnAiConfig').addEventListener('click', () => switchAiView('config'));
   $('#aiAction').addEventListener('change', updateRunBtnLabel);
   $('#btnFetchModels').addEventListener('click', fetchModels);
+  $('#aiSelText').addEventListener('input', () => { updateAiSelHint(); updateRunBtnLabel(); });
 }
 
 function updateRunBtnLabel() {
   const a = $('#aiAction').value;
-  const hasSel = !!(editorSelection && editorSelection.text);
+  const hasSel = !!($('#aiSelText') && $('#aiSelText').value.trim());
   const map = {
     '改写': hasSel ? '改写选中文本' : '改写整篇文档',
     '润色': hasSel ? '润色选中文本' : '润色整篇文档',
@@ -1263,11 +1266,12 @@ function updateRunBtnLabel() {
 function captureEditorSelection() {
   const ed = $('#editor');
   if (!ed) return;
-  editorSelection = {
-    text: ed.value.slice(ed.selectionStart, ed.selectionEnd),
-    start: ed.selectionStart,
-    end: ed.selectionEnd
-  };
+  const text = ed.value.slice(ed.selectionStart, ed.selectionEnd);
+  editorSelection = { text, start: ed.selectionStart, end: ed.selectionEnd };
+  if (text) {
+    const box = $('#aiSelText');
+    if (box) box.value = text;
+  }
   updateAiSelHint();
   updateRunBtnLabel();
 }
@@ -1275,12 +1279,12 @@ function captureEditorSelection() {
 function updateAiSelHint() {
   const el = $('#aiSelHint');
   if (!el) return;
-  const t = editorSelection ? editorSelection.text : '';
+  const t = $('#aiSelText') ? $('#aiSelText').value.trim() : '';
   if (t) {
     const preview = t.length > 24 ? t.slice(0, 24) + '…' : t;
-    el.innerHTML = '已选中 <b>' + countWords(t) + '</b> 字：「' + esc(preview) + '」';
+    el.innerHTML = '已选 <b>' + countWords(t) + '</b> 字（可编辑）：「' + esc(preview) + '」';
   } else {
-    el.textContent = '未选中文本 —— 将处理整篇文档';
+    el.textContent = '未选中 —— 将处理整篇文档';
   }
 }
 
@@ -1288,6 +1292,17 @@ function setAiResult(text) {
   const el = $('#aiResult');
   el.textContent = text;
   el.classList.remove('anim'); void el.offsetWidth; el.classList.add('anim');
+}
+
+function setModelValue(model) {
+  const sel = $('#cfgModel');
+  if (!sel) return;
+  if (model && !Array.from(sel.options).some((o) => o.value === model)) {
+    const o = document.createElement('option');
+    o.value = model; o.textContent = model;
+    sel.insertBefore(o, sel.firstChild);
+  }
+  sel.value = model || 'deepseek-chat';
 }
 
 async function fetchModels() {
@@ -1314,14 +1329,22 @@ async function fetchModels() {
     }
     if (!res || !res.ok) { toast('获取模型失败：' + ((res && res.error) || '未知错误'), 'err'); return; }
     const models = res.models || [];
-    const dl = $('#modelList');
-    dl.innerHTML = '';
-    models.forEach((m) => { const o = document.createElement('option'); o.value = m; dl.appendChild(o); });
     if (models.length) {
-      if (!$('#cfgModel').value || models.indexOf($('#cfgModel').value.trim()) === -1) {
-        $('#cfgModel').value = models[0];
+      const sel = $('#cfgModel');
+      const current = state.cfg.ai.model || sel.value;
+      sel.innerHTML = '';
+      models.forEach((m) => {
+        const o = document.createElement('option');
+        o.value = m; o.textContent = m;
+        sel.appendChild(o);
+      });
+      if (current && models.indexOf(current) === -1) {
+        const o = document.createElement('option');
+        o.value = current; o.textContent = current + '（当前）';
+        sel.insertBefore(o, sel.firstChild);
       }
-      toast('已获取 ' + models.length + ' 个模型', 'ok');
+      sel.value = (current && models.indexOf(current) !== -1) ? current : models[0];
+      toast('已获取 ' + models.length + ' 个模型，请在「模型」下拉框选择', 'ok');
     } else {
       toast('未获取到模型', 'err');
     }
@@ -1432,9 +1455,7 @@ async function runAi() {
   const d = getActive();
   const action = $('#aiAction').value;
   const extra = ($('#aiCustomPrompt').value || '').trim();
-  const ed = $('#editor');
-  captureEditorSelection();
-  const selText = editorSelection.text;
+  const selText = $('#aiSelText') ? $('#aiSelText').value.trim() : '';
   const isSel = !!selText;
 
   let sys = '', user = '';

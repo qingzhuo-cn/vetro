@@ -229,10 +229,14 @@
     <div class="cfg-group">
       <label class="cfg-label" for="cfgModel">模型</label>
       <div class="cfg-keyrow">
-        <input id="cfgModel" class="cfg-input" list="modelList" value="deepseek-chat" placeholder="deepseek-chat / gpt-4o / ..." spellcheck="false">
+        <select id="cfgModel" class="cfg-input">
+          <option value="deepseek-chat">deepseek-chat</option>
+          <option value="deepseek-reasoner">deepseek-reasoner</option>
+          <option value="gpt-4o">gpt-4o</option>
+          <option value="gpt-4o-mini">gpt-4o-mini</option>
+        </select>
         <button class="btn ghost sm" id="btnFetchModels" title="从 API 获取可用模型列表">获取模型</button>
       </div>
-      <datalist id="modelList"></datalist>
     </div>
 
     <p class="cfg-note">🔒 API Key 仅保存在本机：桌面版使用系统级加密（Windows DPAPI），浏览器版以混淆形式存储；绝不会被上传到任何服务器。</p>
@@ -255,6 +259,7 @@
         <option value="自由">自由对话</option>
       </select>
       <div class="ai-sel-hint" id="aiSelHint"></div>
+      <textarea id="aiSelText" class="ai-custom" rows="3" placeholder="在此编辑要处理的内容（鼠标选中会自动填入，可修改）；留空则处理整篇文档" spellcheck="false"></textarea>
       <div class="ai-contextrow">
         <textarea id="aiCustomPrompt" class="ai-custom" placeholder="附加指令（可选）：例如「用更简洁的口吻」" rows="2" spellcheck="false"></textarea>
       </div>
