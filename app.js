@@ -152,12 +152,14 @@ const undoStack = [];
 let sidebarTab = 'docs';
 let multiSelect = false;
 const selected = new Set();
+const collapsedDocs = new Set();
 let stopController = null;
 let editorSelection = { text: '', start: 0, end: 0 };
 
 function applyState(data) {
   if (!data || typeof data !== 'object') return;
   if (Array.isArray(data.docs)) state.docs = data.docs;
+  state.docs.forEach((d) => { if (d.parentId == null) d.parentId = null; });
   if (Array.isArray(data.trash)) state.trash = data.trash;
   if (data.activeId != null) state.activeId = data.activeId;
   if (data.syncMeta && typeof data.syncMeta === 'object') state.syncMeta = data.syncMeta;
@@ -295,8 +297,8 @@ function fmtTime(t) {
   return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
 }
 
-function createDoc(name = '未命名文档.md', content = '', filePath = null) {
-  const d = { id: uid(), name, content, filePath: filePath || null, createdAt: Date.now(), updatedAt: Date.now() };
+function createDoc(name = '未命名文档.md', content = '', filePath = null, parentId = null) {
+  const d = { id: uid(), name, content, filePath: filePath || null, parentId: parentId || null, createdAt: Date.now(), updatedAt: Date.now() };
   state.docs.unshift(d);
   state.activeId = d.id;
   save();
@@ -314,6 +316,7 @@ async function deleteDoc(id) {
   const idx = state.docs.findIndex((x) => x.id === id);
   if (idx < 0) return;
   const [removed] = state.docs.splice(idx, 1);
+  reparentChildren(removed.id, removed.parentId);
   state.trash.unshift(Object.assign({}, removed, { deletedAt: Date.now() }));
   if (state.activeId === id) state.activeId = state.docs.length ? state.docs[0].id : null;
   save();
@@ -389,7 +392,8 @@ async function mergeSelected() {
   pushUndo();
   const content = docs.map((d) => d.content || '').join('\n\n---\n\n');
   state.docs = state.docs.filter((d) => !ids.includes(d.id));
-  state.docs.unshift({ id: uid(), name: clean, content, filePath: null, createdAt: Date.now(), updatedAt: Date.now() });
+  ids.forEach((id) => reparentChildren(id, null));
+  state.docs.unshift({ id: uid(), name: clean, content, filePath: null, parentId: null, createdAt: Date.now(), updatedAt: Date.now() });
   state.activeId = state.docs[0].id;
   exitMultiSelect();
   save(); renderDocList(); renderEditor();
@@ -402,6 +406,7 @@ async function deleteSelected() {
   const ok = await confirmDialog({ title: '批量删除', message: '确定删除选中的 ' + ids.length + ' 个文档吗？（可点「撤销」恢复）', confirmLabel: '删除', danger: true });
   if (!ok) return;
   pushUndo();
+  ids.forEach((id) => reparentChildren(id, (state.docs.find((d) => d.id === id) || {}).parentId || null));
   state.docs.filter((d) => ids.includes(d.id)).forEach((d) => state.trash.unshift(Object.assign({}, d, { deletedAt: Date.now() })));
   state.docs = state.docs.filter((d) => !ids.includes(d.id));
   if (ids.includes(state.activeId)) state.activeId = state.docs.length ? state.docs[0].id : null;
@@ -411,11 +416,82 @@ async function deleteSelected() {
 }
 
 /* ===== 渲染 ===== */
+/* ===== 文档树（主文档 / 分文档） ===== */
+function childrenOf(parentId) {
+  return state.docs.filter((d) => (d.parentId || null) === parentId);
+}
+function isDescendantOf(descendantId, ancestorId) {
+  let cur = state.docs.find((d) => d.id === descendantId);
+  while (cur && cur.parentId) {
+    if (cur.parentId === ancestorId) return true;
+    cur = state.docs.find((d) => d.id === cur.parentId);
+  }
+  return false;
+}
+function buildTree() {
+  const out = [];
+  const walk = (parentId, depth) => {
+    childrenOf(parentId).forEach((d) => {
+      out.push({ doc: d, depth });
+      if (!collapsedDocs.has(d.id)) walk(d.id, depth + 1);
+    });
+  };
+  walk(null, 0);
+  return out;
+}
+function reparentChildren(parentId, newParentId) {
+  state.docs.forEach((x) => { if ((x.parentId || null) === parentId) x.parentId = newParentId || null; });
+}
+function toggleCollapse(id) {
+  if (collapsedDocs.has(id)) collapsedDocs.delete(id); else collapsedDocs.add(id);
+  renderDocList(true);
+}
+function createSubDoc(parentId) {
+  const parent = state.docs.find((d) => d.id === parentId);
+  const name = (parent ? parent.name.replace(/\.\w+$/i, '') : '文档') + ' · 子文档.md';
+  pushUndo();
+  const d = { id: uid(), name, content: '', filePath: null, parentId: parentId || null, createdAt: Date.now(), updatedAt: Date.now() };
+  state.docs.unshift(d);
+  state.activeId = d.id;
+  collapsedDocs.delete(parentId);
+  save(); renderDocList(); renderEditor();
+  toast('已新建子文档');
+}
+function setDocParent(id, newParentId) {
+  pushUndo();
+  const d = state.docs.find((x) => x.id === id);
+  if (d) d.parentId = newParentId || null;
+  save(); renderDocList();
+  toast(newParentId ? '已设为子文档' : '已提升为主文档');
+}
+function pickParentDialog(id) {
+  const doc = state.docs.find((d) => d.id === id);
+  if (!doc) return;
+  const candidates = state.docs.filter((d) => d.id !== id && !isDescendantOf(d.id, id));
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  let html = '<div class="modal modal-dialog" role="dialog"><div class="modal-head"><h3>移动「' + esc(doc.name) + '」</h3></div><div class="modal-body"><div class="parent-list">';
+  html += '<button class="parent-item" data-parent="">⟷ 作为主文档（无父级）</button>';
+  candidates.forEach((c) => {
+    html += '<button class="parent-item" data-parent="' + esc(c.id) + '">' + esc(c.name) + '</button>';
+  });
+  html += '</div></div></div>';
+  backdrop.innerHTML = html;
+  document.body.appendChild(backdrop);
+  const finish = () => dismissModal(backdrop);
+  backdrop.querySelectorAll('.parent-item').forEach((b) => {
+    b.addEventListener('click', () => { setDocParent(id, b.dataset.parent || null); finish(); });
+  });
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) finish(); });
+  openModal(backdrop);
+}
+
+/* ===== 渲染 ===== */
 function renderDocList(force) {
   const list = $('#docList');
   if (!list) return;
   const currentIds = $$('.doc-item', list).map((el) => el.dataset.id).join(',');
-  const nextIds = state.docs.map((d) => d.id).join(',');
+  const nextIds = buildTree().map((x) => x.doc.id).join(',');
 
   if (state.docs.length === 0) {
     list.innerHTML = `
@@ -448,7 +524,7 @@ function renderDocList(force) {
   }
 
   list.innerHTML = '';
-  state.docs.forEach((d, i) => {
+  buildTree().forEach(({ doc: d, depth }, i) => {
     const item = document.createElement('div');
     item.className = 'doc-item'
       + (d.id === state.activeId ? ' active' : '')
@@ -456,28 +532,39 @@ function renderDocList(force) {
       + (multiSelect && selected.has(d.id) ? ' selected' : '');
     item.dataset.id = d.id;
     item.style.setProperty('--i', i);
+    item.style.setProperty('--depth', depth);
     const words = countWords(d.content);
     const initial = (d.name || 'md').replace(/\.(md|markdown|txt|mdown)$/i, '').trim().slice(0, 2).toUpperCase() || 'MD';
+    const hasChildren = childrenOf(d.id).length > 0;
     item.innerHTML = `
       ${multiSelect ? `<input type="checkbox" class="doc-check" ${selected.has(d.id) ? 'checked' : ''}>` : ''}
+      ${hasChildren
+        ? `<button class="doc-caret" title="展开/收起">${collapsedDocs.has(d.id) ? '▶' : '▼'}</button>`
+        : '<span class="doc-caret ph"></span>'}
       <div class="doc-ico">${esc(initial)}</div>
       <div class="doc-meta">
         <div class="doc-name">${esc(d.name || '未命名')}</div>
         <div class="doc-sub">${words} 字 · ${fmtTime(d.updatedAt)}</div>
       </div>
       ${syncEnabled() ? `<button class="doc-sync ${d.sync !== false ? 'on' : ''}" title="${d.sync !== false ? '已参与同步（点击关闭）' : '未参与同步（点击开启）'}"><svg viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 1 1 .5-8.97A6 6 0 0 1 19 10.5a3.5 3.5 0 0 1-.5 6.97"/></svg></button>` : ''}
+      <button class="doc-subnew" title="新建子文档">＋</button>
+      <button class="doc-move" title="移动 / 设为主文档">↳</button>
       <button class="doc-del" title="删除" aria-label="删除文档">
         <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
       </button>`;
     item.addEventListener('click', (e) => {
-      if (e.target.closest('.doc-del') || e.target.closest('.doc-check')) return;
+      if (e.target.closest('.doc-del, .doc-check, .doc-caret, .doc-sync, .doc-subnew, .doc-move')) return;
       if (multiSelect) toggleSelected(d.id);
       else switchDoc(d.id);
     });
     const cb = item.querySelector('.doc-check');
     if (cb) cb.addEventListener('click', (e) => { e.stopPropagation(); toggleSelected(d.id); });
+    const caret = item.querySelector('.doc-caret');
+    if (caret && hasChildren) caret.addEventListener('click', (e) => { e.stopPropagation(); toggleCollapse(d.id); });
     item.addEventListener('dblclick', () => { if (!multiSelect) renameDoc(d.id); });
     item.querySelector('.doc-del').addEventListener('click', (e) => { e.stopPropagation(); deleteDoc(d.id); });
+    item.querySelector('.doc-subnew').addEventListener('click', (e) => { e.stopPropagation(); createSubDoc(d.id); });
+    item.querySelector('.doc-move').addEventListener('click', (e) => { e.stopPropagation(); pickParentDialog(d.id); });
     const syncBtn = item.querySelector('.doc-sync');
     if (syncBtn) syncBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleDocSync(d.id); });
     list.appendChild(item);
@@ -1246,7 +1333,12 @@ function bindAi() {
   $('#btnAiConfig').addEventListener('click', () => switchAiView('config'));
   $('#aiAction').addEventListener('change', updateRunBtnLabel);
   $('#btnFetchModels').addEventListener('click', fetchModels);
-  $('#aiSelText').addEventListener('input', () => { updateAiSelHint(); updateRunBtnLabel(); });
+  $('#aiSelText').addEventListener('input', () => {
+    const ta = $('#aiSelText');
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 360) + 'px';
+    updateAiSelHint(); updateRunBtnLabel();
+  });
 }
 
 function updateRunBtnLabel() {
