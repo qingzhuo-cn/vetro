@@ -610,12 +610,15 @@ select.cfg-input { cursor: pointer; }
 /* ===== Toast ===== */
 .toast-wrap { position: fixed; bottom: 50px; left: 50%; transform: translateX(-50%); z-index: 300; display: flex; flex-direction: column; gap: 8px; align-items: center; }
 .toast {
+  display: flex; align-items: center; gap: 10px;
   padding: 10px 18px; border-radius: var(--radius-sm);
   background: var(--glass-bg); backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
   border: 1px solid var(--glass-border-hi); box-shadow: var(--shadow);
   font-size: 13px; color: var(--fg-0); max-width: 80vw;
   animation: toast-in 0.38s var(--ease-spring);
 }
+.toast-action { flex-shrink: 0; color: var(--accent-strong); font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 6px; background: var(--accent-soft); }
+.toast-action:hover { background: var(--accent); color: #fff; }
 .toast.out { animation: toast-out 0.25s var(--ease) forwards; }
 .toast.err { border-color: var(--danger); color: var(--danger); }
 .toast.ok { border-color: var(--accent); color: var(--accent-strong); }

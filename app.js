@@ -11,12 +11,19 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const REDUCED_MOTION = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 /* ===== Toast ===== */
-function toast(msg, kind = '') {
+function toast(msg, kind = '', action = null) {
   const wrap = $('#toastWrap');
   if (!wrap) return;
   const el = document.createElement('div');
   el.className = 'toast' + (kind ? ' ' + kind : '');
   el.textContent = msg;
+  if (action) {
+    const btn = document.createElement('button');
+    btn.className = 'toast-action';
+    btn.textContent = action.label || '撤销';
+    btn.addEventListener('click', () => { action.fn && action.fn(); el.remove(); });
+    el.appendChild(btn);
+  }
   wrap.appendChild(el);
   const kill = () => {
     if (el.classList.contains('out')) return;
@@ -24,7 +31,7 @@ function toast(msg, kind = '') {
     el.addEventListener('animationend', () => el.remove(), { once: true });
     setTimeout(() => el.remove(), 400);
   };
-  setTimeout(kill, 2600);
+  setTimeout(kill, action ? 6000 : 2600);
 }
 
 /* ===== 弹层动画辅助 ===== */
@@ -277,6 +284,8 @@ function undo() {
   if (s.cfg) state.cfg = s.cfg;
   exitMultiSelect();
   save(); renderDocList(); renderEditor(); applyView();
+  applyTheme(); applyFontSize(); applyWrap(); applyIcon();
+  applyAiStatus(); updateSyncUI();
   updateUndoBtn();
   toast('已撤销');
 }
@@ -1248,12 +1257,12 @@ function bindSettings() {
     state.cfg.fontSize = parseInt(e.target.value, 10) || 15; applyFontSize(); save();
   });
   $('#btnClearAll').addEventListener('click', async () => {
-    const ok = await confirmDialog({ title: '清空全部数据', message: '确定清空所有文档和设置吗？此操作不可恢复。', confirmLabel: '清空', danger: true });
+    const ok = await confirmDialog({ title: '清空全部数据', message: '确定清空所有文档和设置吗？清空后仍可点击「撤销」恢复。', confirmLabel: '清空', danger: true });
     if (!ok) return;
     pushUndo();
     state.docs = []; state.activeId = null; state.cfg = defaultCfg();
     save(); renderDocList(); renderEditor(); applyTheme(); applyFontSize(); applyWrap(); applyAccent(); applyIcon(); closeSettings();
-    toast('已清空所有数据', 'ok');
+    toast('已清空所有数据', 'ok', { label: '撤销', fn: undo });
   });
 
   $('#btnImportTheme').addEventListener('click', () => $('#themeInput').click());
