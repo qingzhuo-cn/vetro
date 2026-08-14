@@ -1092,13 +1092,26 @@ function handleDroppedFiles(files) {
   if (images.length) insertImages(images);
 }
 
+function docTreeContent(doc, depth) {
+  depth = depth || 0;
+  const children = childrenOf(doc.id);
+  if (!children.length) return doc.content || '';
+  let out = doc.content || '';
+  for (const child of children) {
+    const level = Math.min(depth + 2, 6);
+    const title = (child.name || '未命名').replace(/\.(md|markdown|txt)$/i, '');
+    out = (out ? out + '\n\n' : '') + '#'.repeat(level) + ' ' + title + '\n\n' + docTreeContent(child, depth + 1);
+  }
+  return out;
+}
+
 async function saveToDisk() {
   const d = getActive();
   if (!d) { toast('没有可保存的文档', 'err'); return; }
   flushEditor();
   if (window.desktop && window.desktop.saveFile) {
     try {
-      const res = await window.desktop.saveFile({ content: d.content, filePath: d.filePath, name: d.name });
+      const res = await window.desktop.saveFile({ content: docTreeContent(d), filePath: d.filePath, name: d.name });
       if (!res || res.canceled) return;
       if (res.error) { toast('保存失败：' + res.error, 'err'); return; }
       d.filePath = res.filePath;
@@ -1116,7 +1129,7 @@ async function saveToDisk() {
         types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md', '.markdown', '.txt'] } }]
       });
       const w = await handle.createWritable();
-      await w.write(d.content);
+      await w.write(docTreeContent(d));
       await w.close();
       toast('已保存：' + handle.name, 'ok');
       return;
@@ -1124,7 +1137,7 @@ async function saveToDisk() {
       if (e.name === 'AbortError') return;
     }
   }
-  const blob = new Blob([d.content], { type: 'text/markdown' });
+  const blob = new Blob([docTreeContent(d)], { type: 'text/markdown' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = d.name || '未命名.md';
@@ -1141,7 +1154,7 @@ async function saveFileAs() {
   flushEditor();
   if (window.desktop && window.desktop.saveFileAs) {
     try {
-      const res = await window.desktop.saveFileAs({ content: d.content, name: d.name });
+      const res = await window.desktop.saveFileAs({ content: docTreeContent(d), name: d.name });
       if (!res || res.canceled) return;
       if (res.error) { toast('另存为失败：' + res.error, 'err'); return; }
       d.filePath = res.filePath;
