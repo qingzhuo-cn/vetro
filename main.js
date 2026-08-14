@@ -308,15 +308,29 @@ ipcMain.handle('webdav-move', async (_e, cfg, from, to) => {
 });
 
 /* ===== 生命周期 ===== */
-app.whenReady().then(() => {
-  // Windows / Linux：去掉原生「文件 编辑 视图 帮助」菜单栏；macOS 保留系统菜单（系统集成需要）
-  if (!isMac) Menu.setApplicationMenu(null);
-  createWindow();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+// 单实例锁：避免重复启动产生多套进程
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+    }
   });
-});
 
-app.on('window-all-closed', () => {
-  if (!isMac) app.quit();
-});
+  app.whenReady().then(() => {
+    // Windows / Linux：去掉原生「文件 编辑 视图 帮助」菜单栏；macOS 保留系统菜单（系统集成需要）
+    if (!isMac) Menu.setApplicationMenu(null);
+    createWindow();
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  });
+
+  app.on('window-all-closed', () => {
+    if (!isMac) app.quit();
+  });
+}
