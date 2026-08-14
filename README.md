@@ -1,15 +1,17 @@
-# Vetro ✨
-
-> 一款**可安装**的玻璃态（Glassmorphism）Markdown 编辑器 —— 拖拽导入、实时预览、接入任意 OpenAI 兼容 API 让 AI 帮你改写润色。
-
 <div align="center">
 
-![theme](https://img.shields.io/badge/theme-glassmorphism-%234ecdc4)
-![pwa](https://img.shields.io/badge/PWA-installable-%237c9eff)
-![license](https://img.shields.io/badge/license-MIT-green)
-![zero-dep](https://img.shields.io/badge/backend-none-static-orange)
+<img src="assets/icon-512.png" width="120" height="120" alt="Vetro logo" />
 
-**纯静态应用 · 无后端 · 双击即用 · 可部署到 Cloudflare Pages**
+# Vetro ✨
+
+**液态玻璃质感 · 本地优先的 Markdown 编辑器**
+
+[![theme](https://img.shields.io/badge/theme-glassmorphism-%234ecdc4)](https://github.com/qingzhuo-cn/vetro)
+[![pwa](https://img.shields.io/badge/PWA-installable-%237c9eff)](https://github.com/qingzhuo-cn/vetro)
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![release](https://img.shields.io/github/v/release/qingzhuo-cn/vetro?color=4ecdc4&label=release)](https://github.com/qingzhuo-cn/vetro/releases)
+
+**拖拽导入 · 实时预览 · AI 改写润色 · WebDAV 同步 · 完全本地 · 可部署 Cloudflare**
 
 </div>
 
