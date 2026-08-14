@@ -39,7 +39,7 @@ WebDAV 服务器（Nextcloud / 坚果云 / NAS …）
 ## 5. 配置与鉴权
 
 - 设置项：`sync.enabled`、`sync.url`（如 `https://dav.example.com/remote.php/dav/files/user/Vetro`）、`sync.username`、`sync.password`（或应用专用 token）。
-- 凭证用 Electron `safeStorage`（DPAPI / Keychain）加密保存，**明文不落盘**。
+- 凭证用 Electron `safeStorage`（Windows DPAPI）加密保存，**明文不落盘**。
 - 鉴权：HTTP Basic（多数 WebDAV 服务器支持）。
 
 ## 6. 同步流程

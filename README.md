@@ -97,7 +97,7 @@ python -m http.server 8765
 3. 在编辑器中**选中一段文字**，选「改写 / 润色 / 翻译」，点「执行 AI 操作」；
 4. 结果会显示在下方面板，可**插入到文档 / 复制 / 全文替换**。
 
-> 🔒 **隐私**：所有内容都在本地。只有你主动点「执行 AI 操作」时，才会把**当次选中的文本**发送给你配置的 API。API Key 桌面版用系统级加密（Windows DPAPI / macOS Keychain）保存，浏览器版仅混淆保存，不会上传到任何服务器。
+> 🔒 **隐私**：所有内容都在本地。只有你主动点「执行 AI 操作」时，才会把**当次选中的文本**发送给你配置的 API。API Key 桌面版用系统级加密（Windows DPAPI）保存，浏览器版仅混淆保存，不会上传到任何服务器。
 
 > ⚠️ **云端部署请勿使用 AI**：Web / Cloudflare 版中 API Key 只有混淆（无系统级加密），且多数 OpenAI 兼容接口会因 **CORS 跨域**限制无法从浏览器直接调用。AI 功能面向**桌面版**设计，云端部署时请把 Vetro 当作纯 Markdown 编辑器使用。
 
@@ -144,12 +144,13 @@ vetro/
 - **安全**：预览经 `DOMPurify` 净化（防 XSS），外部链接走系统浏览器；云端由 `_headers` 下发 CSP；
 - **持久化**：IndexedDB（`vetro` 数据库），旧版 `glassmark` 数据自动迁移；
 - **主题系统**：8 套强调色 + 4 种图标样式，JSON 主题导入 / 导出（存入 IndexedDB）；
-- **密钥安全**：桌面版用 Electron `safeStorage`（Windows DPAPI / macOS Keychain）加密 API Key，明文永不落盘；
+- **密钥安全**：桌面版用 Electron `safeStorage`（Windows DPAPI）加密 API Key，明文永不落盘；
 - **AI 流式**：`stream: true` SSE 逐字渲染，可随时停止；
 - **撤销/合并**：文档级操作快照栈 + 侧边栏多选合并；
 - **文件读写**：桌面版走 Electron 原生磁盘读写，浏览器版优先 `File System Access API`，降级为下载；
 - **拖拽**：`dragenter` / `drop` 全局监听，支持多文件；
 - **桌面安装**：`npm run build`（electron-builder）产出 NSIS 安装包 + 免安装版；
+- **平台**：当前仅发布 **Windows** 安装包；代码兼容 macOS / Linux（`safeStorage` 分别走 Keychain / libsecret），可在对应系统上执行 `electron-builder --mac` / `--linux` 自行构建；
 - **PWA**：`beforeinstallprompt` 捕获 + Service Worker 离线缓存；
 - **同步**：桌面版 WebDAV（Nextcloud / 坚果云 / NAS，含回收站、毫秒级冲突检测、部分文档同步），见 `WEBDAV-SYNC-DESIGN.md`；云端版方案见 cloud 分支 `SYNC-DESIGN.md`。
 

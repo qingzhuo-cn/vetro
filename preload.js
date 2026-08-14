@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('desktop', {
   /* 另存为 → { canceled, filePath, name, error? } */
   saveFileAs: (payload) => ipcRenderer.invoke('save-file-as', payload),
 
-  /* 密钥加解密：桌面版走系统级 safeStorage（Windows DPAPI / macOS Keychain） */
+  /* 密钥加解密：桌面版走系统级 safeStorage */
   secure: {
     encrypt: (text) => ipcRenderer.invoke('safe-encrypt', text),
     decrypt: (b64) => ipcRenderer.invoke('safe-decrypt', b64)

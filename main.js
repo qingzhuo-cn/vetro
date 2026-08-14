@@ -118,7 +118,7 @@ ipcMain.handle('save-file-as', async (_e, { content, name }) => {
 });
 
 /* ===== 密钥安全存储 =====
-   safeStorage 使用操作系统级加密：Windows DPAPI / macOS Keychain / Linux libsecret。 */
+   safeStorage 使用操作系统级加密。 */
 ipcMain.handle('safe-encrypt', (_e, text) => {
   try {
     if (!safeStorage.isEncryptionAvailable()) return { ok: false };

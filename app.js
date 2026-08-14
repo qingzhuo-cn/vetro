@@ -209,7 +209,7 @@ async function save() {
 }
 
 /* ===== API Key 安全存储 =====
-   桌面版：Electron safeStorage（Windows DPAPI / macOS Keychain）加密后落盘；
+   桌面版：Electron safeStorage（系统级加密）加密后落盘；
    浏览器版：降级为 base64 混淆。明文 key 仅存于内存，绝不写入存储。 */
 async function persistKey() {
   const k = state.cfg.ai.key;
