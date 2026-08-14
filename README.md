@@ -138,7 +138,8 @@ glassmark/
 - **文件读写**：桌面版走 Electron 原生磁盘读写，浏览器版优先 `File System Access API`，降级为下载；
 - **拖拽**：`dragenter` / `drop` 全局监听，支持多文件；
 - **桌面安装**：`npm run build`（electron-builder）产出 NSIS 安装包 + 免安装版；
-- **PWA**：`beforeinstallprompt` 捕获 + Service Worker 离线缓存。
+- **PWA**：`beforeinstallprompt` 捕获 + Service Worker 离线缓存；
+- **同步（计划中）**：桌面版走 WebDAV（Nextcloud / 坚果云 / NAS），云端版走 Cloudflare D1，见 `WEBDAV-SYNC-DESIGN.md` 与 cloud 分支的 `SYNC-DESIGN.md`。
 
 ---
 
