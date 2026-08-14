@@ -25,6 +25,17 @@ contextBridge.exposeInMainWorld('desktop', {
   /* 获取 AI 模型列表（走主进程，规避浏览器 CORS 限制） */
   aiModels: (payload) => ipcRenderer.invoke('ai-models', payload),
 
+  /* 自定义窗口控制（无边框窗口） */
+  win: {
+    minimize: () => ipcRenderer.invoke('win-minimize'),
+    maximize: () => ipcRenderer.invoke('win-maximize'),
+    close: () => ipcRenderer.invoke('win-close'),
+    onState: (cb) => ipcRenderer.on('win-state', (_e, s) => cb(s))
+  },
+
+  /* 检查更新（GitHub Releases） */
+  checkUpdate: () => ipcRenderer.invoke('check-update'),
+
   /* WebDAV 同步 */
   webdav: {
     test: (cfg) => ipcRenderer.invoke('webdav-test', cfg),

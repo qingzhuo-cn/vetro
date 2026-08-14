@@ -86,6 +86,11 @@
         <span>AI 助手</span>
       </button>
     </div>
+    <div class="win-controls">
+      <button class="winbtn" id="btnWinMin" title="最小化">—</button>
+      <button class="winbtn" id="btnWinMax" title="最大化/还原">□</button>
+      <button class="winbtn close" id="btnWinClose" title="关闭">✕</button>
+    </div>
   </header>
 
   <!-- ===== 工作区 ===== -->
@@ -187,6 +192,9 @@
 
   <!-- ===== 状态栏 ===== -->
   <footer class="statusbar">
+    <a id="projectLink" class="project-link" href="https://github.com/qingzhuo-cn/vetro" title="项目主页">Vetro · GitHub</a>
+    <a id="updateHint" class="update-hint" hidden></a>
+    <span class="status-sep"></span>
     <span id="saveState" class="save-state">自动保存</span>
     <span class="status-sep"></span>
     <span id="statusMsg">就绪</span>

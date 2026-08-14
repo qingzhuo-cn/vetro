@@ -1981,6 +1981,47 @@ function renderTrash() {
   });
 }
 
+/* ===== 窗口控制 / 项目链接 / 更新检测 ===== */
+function bindWindowControls() {
+  if (!window.desktop || !window.desktop.win) return;
+  $('#btnWinMin').addEventListener('click', () => window.desktop.win.minimize());
+  $('#btnWinMax').addEventListener('click', () => window.desktop.win.maximize());
+  $('#btnWinClose').addEventListener('click', () => window.desktop.win.close());
+  if (window.desktop.win.onState) {
+    window.desktop.win.onState((s) => {
+      const btn = $('#btnWinMax');
+      if (btn) btn.textContent = s && s.maximized ? '❐' : '□';
+    });
+  }
+}
+function bindProjectLink() {
+  const a = $('#projectLink');
+  if (a) a.addEventListener('click', (e) => {
+    e.preventDefault();
+    window.open(a.href, '_blank', 'noopener,noreferrer');
+  });
+  const u = $('#updateHint');
+  if (u) u.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (u.dataset.url) window.open(u.dataset.url, '_blank', 'noopener,noreferrer');
+  });
+}
+async function checkForUpdate() {
+  if (!window.desktop || !window.desktop.checkUpdate) return;
+  try {
+    const r = await window.desktop.checkUpdate();
+    if (r && r.ok && r.hasUpdate) {
+      const u = $('#updateHint');
+      if (u) {
+        u.hidden = false;
+        u.textContent = '有更新 ' + r.latest;
+        u.dataset.url = r.url || 'https://github.com/qingzhuo-cn/vetro/releases';
+      }
+      toast('发现新版本 ' + r.latest + '，可前往 Releases 下载（不强制更新）', 'ok');
+    }
+  } catch (e) {}
+}
+
 /* ===== 启动 ===== */
 async function boot() {
   await load();
@@ -2041,6 +2082,8 @@ async function boot() {
   bindSettings();
   bindAi();
   bindPwa();
+  bindWindowControls();
+  bindProjectLink();
   updateRunBtnLabel();
   applyAiStatus();
   updateUndoBtn();
@@ -2052,6 +2095,8 @@ async function boot() {
 
   // 启动后自动同步一次
   if (syncEnabled()) setTimeout(() => syncNow(), 1500);
+  // 启动后检查更新（桌面版，不强制）
+  setTimeout(() => checkForUpdate(), 3000);
 
   if (window.innerWidth < 900) $('#sidebar').classList.add('collapsed');
 }

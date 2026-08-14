@@ -16,6 +16,7 @@ function createWindow() {
     height: 900,
     minWidth: 820,
     minHeight: 560,
+    frame: false,
     title: 'Vetro',
     icon: path.join(__dirname, 'assets', 'icon-512.png'),
     backgroundColor: '#07090d',
@@ -36,6 +37,10 @@ function createWindow() {
     if (url.startsWith('http')) shell.openExternal(url);
     return { action: 'deny' };
   });
+
+  // 同步窗口最大化状态（自定义标题栏按钮）
+  win.on('maximize', () => win.webContents.send('win-state', { maximized: true }));
+  win.on('unmaximize', () => win.webContents.send('win-state', { maximized: false }));
 
   // 右键菜单（复制 / 剪切 / 粘贴 / 全选），替代被移除的顶部菜单栏
   win.webContents.on('context-menu', (_e, params) => {
@@ -153,6 +158,39 @@ ipcMain.handle('ai-models', async (_e, { endpoint, key }) => {
   } catch (e) {
     return { ok: false, error: e.message };
   }
+});
+
+/* ===== 窗口控制 + 更新检测 ===== */
+ipcMain.handle('win-minimize', (e) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.minimize(); });
+ipcMain.handle('win-maximize', (e) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  if (!w) return false;
+  if (w.isMaximized()) w.unmaximize(); else w.maximize();
+  return true;
+});
+ipcMain.handle('win-close', (e) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.close(); });
+
+function compareVer(a, b) {
+  const pa = String(a).replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
+  const pb = String(b).replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) {
+    const x = pa[i] || 0, y = pb[i] || 0;
+    if (x > y) return 1;
+    if (x < y) return -1;
+  }
+  return 0;
+}
+ipcMain.handle('check-update', async () => {
+  try {
+    const current = app.getVersion();
+    const res = await fetch('https://api.github.com/repos/qingzhuo-cn/vetro/releases/latest', {
+      headers: { 'User-Agent': 'Vetro', 'Accept': 'application/vnd.github+json' }
+    });
+    if (!res.ok) return { ok: false };
+    const data = await res.json();
+    const latest = data.tag_name || '';
+    return { ok: true, hasUpdate: compareVer(latest, current) > 0, latest, current, url: data.html_url || null };
+  } catch (e) { return { ok: false, error: e.message }; }
 });
 
 /* ===== WebDAV 客户端（无依赖，基于 Node 内置 fetch） ===== */

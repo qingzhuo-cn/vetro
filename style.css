@@ -151,14 +151,16 @@ body[data-theme="light"] .orb { opacity: 0.25; }
 
 /* ===== 顶部栏 ===== */
 .topbar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 16px; gap: 16px;
+  display: flex; align-items: center;
+  padding: 0 0 0 16px; gap: 12px;
   background: var(--glass-bg-lo);
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
   border-bottom: 1px solid var(--glass-border);
+  -webkit-app-region: drag;
 }
-.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.topbar button, .topbar a, .topbar input, .topbar select { -webkit-app-region: no-drag; }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; margin-right: auto; }
 .brand-logo {
   width: 34px; height: 34px; flex-shrink: 0;
   filter: drop-shadow(0 4px 12px var(--accent-glow));
@@ -171,6 +173,14 @@ body[data-theme="light"] .orb { opacity: 0.25; }
 }
 
 .topbar-actions { display: flex; align-items: center; gap: 8px; }
+.win-controls { display: flex; align-self: stretch; -webkit-app-region: no-drag; }
+.winbtn {
+  width: 46px; height: 100%; display: grid; place-items: center;
+  color: var(--fg-2); font-size: 12px; line-height: 1; border: none; background: none;
+  transition: background-color var(--dur-fast), color var(--dur-fast);
+}
+.winbtn:hover { background: var(--glass-bg-hi); color: var(--fg-0); }
+.winbtn.close:hover { background: #e81123; color: #fff; }
 
 /* ===== 按钮 ===== */
 .btn {
@@ -431,6 +441,10 @@ body[data-theme="light"] .orb { opacity: 0.25; }
 }
 .statusbar .spacer { flex: 1; }
 .status-sep { width: 1px; height: 12px; background: var(--glass-border); }
+.project-link, .update-hint { font-size: 11px; color: var(--fg-3); text-decoration: none; transition: color var(--dur-fast); }
+.project-link:hover { color: var(--accent-strong); }
+.update-hint { color: var(--accent-strong); font-weight: 600; cursor: pointer; }
+.update-hint:hover { text-decoration: underline; }
 .save-state { font-variant-numeric: tabular-nums; color: var(--fg-2); }
 .save-state.flash { animation: save-flash 0.8s var(--ease); }
 @keyframes save-flash { 0% { color: var(--accent-strong); opacity: 0.6; } 100% { color: var(--fg-2); opacity: 1; } }
