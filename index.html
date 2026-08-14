@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vetro · 玻璃态 Markdown 编辑器</title>
+<meta name="description" content="Vetro —— 一款可安装的桌面级 Markdown 编辑器：拖拽导入导出、所见即所得、接入任意 OpenAI 兼容 API，让 AI 帮你改写润色。">
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
+<meta name="theme-color" content="#0b0e14">
+
+<!-- marked + highlight + purify（本地内置，离线可用） -->
+<script src="vendor/marked.min.js"></script>
+<script src="vendor/highlight.min.js"></script>
+<script src="vendor/purify.min.js"></script>
+
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app-bg" aria-hidden="true">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+</div>
+
+<div id="app" class="app">
+
+  <!-- ===== 顶部栏 ===== -->
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-logo" viewBox="0 0 36 36" aria-hidden="true">
+        <defs>
+          <linearGradient id="logoGrad" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="var(--accent)"/>
+            <stop offset="1" stop-color="var(--accent-2)"/>
+          </linearGradient>
+        </defs>
+        <rect x="2" y="2" width="32" height="32" rx="10" fill="url(#logoGrad)"/>
+        <rect x="2.6" y="2.6" width="30.8" height="30.8" rx="9.4" fill="none" stroke="rgba(255,255,255,0.38)" stroke-width="1"/>
+        <g id="logoGlyph">
+          <path d="M11 22 V13 L16.5 16.8 L22 13 V22" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M16.5 23.5 V26.6 M14.6 26.6 L16.5 28.6 L18.4 26.6" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+      </svg>
+      <div class="brand-text">
+        <span class="brand-name">Vetro</span>
+        <span class="brand-tag" id="docName">未命名文档.md</span>
+      </div>
+    </div>
+
+    <div class="topbar-actions">
+      <button class="btn ghost" id="btnInstall" title="安装为桌面应用" hidden>
+        <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+        <span>安装</span>
+      </button>
+
+      <button class="btn ghost" id="btnFiles" title="打开并添加文档 (Ctrl/⌘+O)">
+        <svg viewBox="0 0 24 24"><path d="M4 4h7l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
+        <span>添加文档</span>
+      </button>
+
+      <button class="btn ghost" id="btnSave" title="保存当前文档到磁盘 (Ctrl/⌘+S)">
+        <svg viewBox="0 0 24 24"><path d="M5 4a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8.5a1 1 0 0 0-.3-.7l-3.5-3.5a1 1 0 0 0-.7-.3H5zm8 3h2v3h-2V7zM8 6h2v2h4V6h1v4H8V6zm1 13v-4h6v4H9z"/></svg>
+        <span>保存</span>
+      </button>
+
+      <button class="btn ghost" id="btnSaveAs" title="另存为" hidden>
+        <svg viewBox="0 0 24 24"><path d="M5 4a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8.5a1 1 0 0 0-.3-.7l-3.5-3.5a1 1 0 0 0-.7-.3H5zm8 3h2v3h-2V7zM8 6h2v2h4V6h1v4H8V6z"/></svg>
+        <span>另存为</span>
+      </button>
+
+      <button class="btn ghost" id="btnToggleSplit" title="切换视图（编辑 / 分栏 / 预览）">
+        <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 4v16"/></svg>
+        <span>视图</span>
+      </button>
+
+      <button class="btn ghost" id="btnSettings" title="设置">
+        <svg viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7zm7.4-2.7a7.6 7.6 0 0 0 0-1.6l1.9-1.5a.5.5 0 0 0 .1-.6l-1.8-3.1a.5.5 0 0 0-.6-.2l-2.2.9a7.6 7.6 0 0 0-1.4-.8l-.3-2.4a.5.5 0 0 0-.5-.4h-3.6a.5.5 0 0 0-.5.4l-.3 2.4c-.5.2-1 .5-1.4.8l-2.2-.9a.5.5 0 0 0-.6.2L3.7 8.9a.5.5 0 0 0 .1.6l1.9 1.5v1.6l-1.9 1.5a.5.5 0 0 0-.1.6l1.8 3.1c.1.2.4.3.6.2l2.2-.9a7.6 7.6 0 0 0 1.4.8l.3 2.4c0 .2.2.4.5.4h3.6c.2 0 .4-.2.5-.4l.3-2.4c.5-.2 1-.4 1.4-.8l2.2.9c.2.1.5 0 .6-.2l1.8-3.1a.5.5 0 0 0-.1-.6l-1.9-1.5z"/></svg>
+        <span>设置</span>
+      </button>
+
+      <button class="btn primary" id="btnAi" title="打开 AI 助手">
+        <svg viewBox="0 0 24 24"><path d="M12 2l1.9 4.6L18.5 8l-4.6 1.9L12 14.5l-1.9-4.6L5.5 8l4.6-1.4L12 2zm7 10l1.1 2.6 2.6 1.1-2.6 1.1L19 19.5l-1.1-2.6-2.6-1.1 2.6-1.1L19 12z"/></svg>
+        <span>AI 助手</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===== 工作区 ===== -->
+  <div class="workbench">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head">
+        <div class="sidebar-tabs">
+          <button class="sidebar-tab active" data-sidebar-tab="docs">文档</button>
+          <button class="sidebar-tab" data-sidebar-tab="outline">大纲</button>
+        </div>
+        <div class="sidebar-actions">
+          <button class="iconbtn" id="btnNewDoc" title="新建文档">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+          <button class="iconbtn" id="btnCollapseSidebar" title="收起面板">
+            <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="sidebar-tools">
+        <button class="toolbtn" id="btnMultiSelect" title="多选文档，以便批量合并">
+          <svg viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M4 4h16v16H4z"/></svg>
+          <span>多选</span>
+        </button>
+        <button class="toolbtn" id="btnUndo" title="撤销文档级操作 (Ctrl+Shift+Z)" disabled>
+          <svg viewBox="0 0 24 24"><path d="M9 14l-4-4 4-4"/><path d="M5 10h11a4 4 0 0 1 0 8h-3"/></svg>
+          <span>撤销</span>
+        </button>
+      </div>
+      <div class="doc-list" id="docList"></div>
+      <div class="outline" id="outline" hidden></div>
+      <div class="sidebar-foot">
+        <div class="multi-bar" id="multiBar" hidden>
+          <span class="multi-count" id="multiCount">已选 0 项</span>
+          <button class="btn primary sm" id="btnMergeSelected">合并</button>
+          <button class="btn danger sm" id="btnDeleteSelected">删除</button>
+          <button class="btn ghost sm" id="btnCancelMulti">取消</button>
+        </div>
+        <div class="drop-hint" id="dropHint">
+          <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+          <span>拖入 .md / .txt 批量导入<br>或粘贴 / 拖入图片</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 分栏主体 -->
+    <div class="editor-shell" id="editorShell">
+      <!-- 编辑器与预览切换页签 -->
+      <div class="view-tabs" id="viewTabs">
+        <div class="tab" data-view="edit">编辑</div>
+        <div class="tab" data-view="split">分栏</div>
+        <div class="tab" data-view="preview">预览</div>
+        <div class="tab-sep"></div>
+        <div class="tab-stats"><span id="statWords">0</span> 字 · <span id="statLines">0</span> 行</div>
+        <div class="tab-right">
+          <button class="iconbtn" id="btnWordWrap" title="自动换行" aria-label="切换自动换行">
+            <svg viewBox="0 0 24 24"><path d="M4 6h13a3 3 0 0 1 0 6h-3M4 6l3-3M4 6l3 3M4 18h3a3 3 0 0 0 0-6"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 查找替换栏 -->
+      <div class="find-bar" id="findBar" hidden>
+        <input id="findInput" class="find-input" placeholder="查找…" spellcheck="false">
+        <span class="find-count" id="findCount"></span>
+        <button class="iconbtn" id="btnFindPrev" title="上一个 (Shift+Enter)">
+          <svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>
+        </button>
+        <button class="iconbtn" id="btnFindNext" title="下一个 (Enter)">
+          <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <button class="iconbtn" id="btnToggleReplace" title="展开替换">
+          <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h16"/></svg>
+        </button>
+        <input id="replaceInput" class="find-input replace" placeholder="替换为…" spellcheck="false" hidden>
+        <button class="iconbtn" id="btnReplaceOne" title="替换当前" hidden>
+          <svg viewBox="0 0 24 24"><path d="M7 7h10v10M17 7L7 17"/></svg>
+        </button>
+        <button class="btn ghost sm" id="btnReplaceAll" hidden>全部替换</button>
+        <button class="iconbtn" id="btnCloseFind" title="关闭 (Esc)">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+
+      <div class="editor-panes" id="editorPanes">
+        <!-- 编辑区 -->
+        <div class="pane pane-edit">
+          <textarea id="editor" class="editor" spellcheck="false" placeholder="在此输入 Markdown…… 支持 Ctrl+F 查找替换、Ctrl+V 粘贴图片"></textarea>
+        </div>
+        <!-- 预览区 -->
+        <div class="pane pane-preview">
+          <div id="preview" class="preview markdown-body"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 状态栏 ===== -->
+  <footer class="statusbar">
+    <span id="saveState" class="save-state">自动保存</span>
+    <span class="status-sep"></span>
+    <span id="statusMsg">就绪</span>
+    <span class="spacer"></span>
+    <span id="aiStatus" class="ai-dot off"><span class="dot"></span>AI 未连接</span>
+  </footer>
+</div>
+
+<!-- ===== AI 助手侧边抽屉 ===== -->
+<div class="ai-backdrop" id="aiBackdrop"></div>
+<div class="ai-drawer" id="aiDrawer" aria-hidden="true">
+  <div class="ai-drawer-head">
+    <div class="ai-title">
+      <span class="ai-spark">✦</span> AI 助手
+    </div>
+    <button class="iconbtn" id="btnCloseAi" title="关闭">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+
+  <div id="aiConfigView" class="ai-config">
+    <div class="ai-status-card" id="aiStatusCard">
+      <div class="ai-status-line"><span class="dot"></span><span id="aiStatusCardLine">未配置 API</span></div>
+    </div>
+
+    <div class="cfg-group">
+      <label class="cfg-label" for="cfgEndpoint">API 地址 (OpenAI 兼容)</label>
+      <input id="cfgEndpoint" class="cfg-input" placeholder="https://api.deepseek.com/v1" spellcheck="false">
+    </div>
+    <div class="cfg-group">
+      <label class="cfg-label" for="cfgKey">API Key</label>
+      <div class="cfg-keyrow">
+        <input id="cfgKey" class="cfg-input" type="password" placeholder="sk-..." spellcheck="false">
+        <button class="iconbtn" id="btnToggleKey" title="显示/隐藏">
+          <svg class="eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="cfg-group">
+      <label class="cfg-label" for="cfgModel">模型</label>
+      <input id="cfgModel" class="cfg-input" value="deepseek-chat" placeholder="deepseek-chat / gpt-4o / ..." spellcheck="false">
+    </div>
+
+    <p class="cfg-note">🔒 API Key 仅保存在本机：桌面版使用系统级加密（Windows DPAPI / macOS Keychain），浏览器版以混淆形式存储；绝不会被上传到任何服务器。</p>
+    <p class="cfg-note warn" id="aiCloudWarn" hidden>⚠️ 云端 / 浏览器版提醒：浏览器中 API Key 仅做混淆（无系统级加密），且多数 OpenAI 兼容接口会因跨域（CORS）限制无法从浏览器直接调用。请优先在桌面版使用 AI，云端部署时建议不要使用 AI 功能。</p>
+
+    <button class="btn primary block" id="btnSaveAi">
+      <svg viewBox="0 0 24 24"><path d="M5 4a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8.5a1 1 0 0 0-.3-.7l-3.5-3.5a1 1 0 0 0-.7-.3H5zM8 6h2v3H8V6zm4 0h2v2h-2V6zm-2 5h4v7h-4v-7z"/></svg>
+      <span>保存并测试连接</span>
+    </button>
+  </div>
+
+  <div id="aiChatView" class="ai-chat" hidden>
+    <div class="ai-tools">
+      <select id="aiAction" class="cfg-input">
+        <option value="改写">改写选中文本</option>
+        <option value="润色">润色选中文本</option>
+        <option value="续写">续写 (光标后)</option>
+        <option value="翻译">翻译为中文</option>
+        <option value="总结">总结当前文档</option>
+        <option value="自由">自由对话</option>
+      </select>
+      <div class="ai-contextrow">
+        <textarea id="aiCustomPrompt" class="ai-custom" placeholder="附加指令（可选）：例如「用更简洁的口吻」" rows="2" spellcheck="false"></textarea>
+      </div>
+      <div class="ai-run-row">
+        <button class="btn primary grow" id="btnRunAi">
+          <svg viewBox="0 0 24 24"><path d="M12 2l1.9 4.6L18.5 8l-4.6 1.9L12 14.5l-1.9-4.6L5.5 8l4.6-1.4L12 2zm7 10l1.1 2.6 2.6 1.1-2.6 1.1L19 19.5l-1.9-2.6-2.6-1.1 2.6-1.1 1.9-2.6z"/></svg>
+          <span id="btnRunAiLabel">执行 AI 操作</span>
+        </button>
+        <button class="btn danger" id="btnStopAi" title="停止生成" hidden>停止</button>
+      </div>
+    </div>
+
+    <div class="ai-result-label" id="aiResultLabel" hidden>处理结果</div>
+    <div class="ai-result" id="aiResult" contenteditable="true" spellcheck="false"></div>
+    <div class="ai-result-actions" id="aiResultActions" hidden>
+      <button class="btn ghost sm" id="btnInsertResult">插入到文档</button>
+      <button class="btn ghost sm" id="btnCopyResult">复制结果</button>
+      <button class="btn ghost sm" id="btnUseAsDoc">全文替换文档</button>
+    </div>
+    <div class="ai-cols" id="aiCols">
+      <button class="btn ghost sm" id="btnAiConfig">
+        <svg viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7z"/></svg>
+        修改配置
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 设置弹窗 ===== -->
+<div class="modal-backdrop" id="settingsModal" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <h3>设置</h3>
+      <button class="iconbtn" data-close-settings aria-label="关闭">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="cfg-group">
+        <label class="cfg-label">主题</label>
+        <div class="seg" id="themeSeg">
+          <button data-theme="auto" class="seg-item active">跟随系统</button>
+          <button data-theme="dark" class="seg-item">暗色</button>
+          <button data-theme="light" class="seg-item">亮色</button>
+        </div>
+      </div>
+      <div class="cfg-group">
+        <label class="cfg-label">默认视图</label>
+        <div class="seg" id="viewSeg">
+          <button data-view-mode="edit" class="seg-item">仅编辑</button>
+          <button data-view-mode="split" class="seg-item active">左右分栏</button>
+          <button data-view-mode="preview" class="seg-item">仅预览</button>
+        </div>
+      </div>
+      <div class="cfg-group">
+        <label class="cfg-label">强调色</label>
+        <div class="accent-grid" id="accentGrid"></div>
+      </div>
+      <div class="cfg-group">
+        <label class="cfg-label">图标样式</label>
+        <div class="icon-grid" id="iconGrid"></div>
+      </div>
+      <div class="cfg-group">
+        <label class="cfg-label">主题</label>
+        <div class="seg-row">
+          <button class="btn ghost sm" id="btnImportTheme">导入主题 (.json)</button>
+          <button class="btn ghost sm" id="btnExportTheme">导出当前配色</button>
+        </div>
+      </div>
+      <div class="cfg-group">
+        <label class="cfg-label">编辑器字号</label>
+        <input id="cfgFontSize" class="cfg-input" type="range" min="12" max="22" step="1" value="15">
+        <span class="cfg-range-val" id="cfgFontSizeVal">15px</span>
+      </div>
+      <div class="cfg-group">
+        <p class="cfg-note">所有数据（文档、配置）都保存在本机浏览器内。未被删改的数据不会上传到任何服务器；只有你在「AI 助手」中主动运行操作时，才会把当次选中的内容发送到你配置的 API。API Key 使用系统级加密保存。</p>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" data-close-settings>关闭</button>
+      <button class="btn danger" id="btnClearAll">清空全部数据</button>
+    </div>
+  </div>
+</div>
+
+<!-- 隐藏文件选择器 -->
+<input type="file" id="fileInput" accept=".md,.markdown,.txt,.mdown" multiple hidden>
+<input type="file" id="themeInput" accept=".json,application/json" hidden>
+
+<!-- ===== 阴影拖拽遮罩 ===== -->
+<div class="drag-overlay" id="dragOverlay" hidden>
+  <div class="drag-overlay-inner">
+    <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+    <span>松开以导入文件 / 图片</span>
+  </div>
+</div>
+
+<div id="toastWrap" class="toast-wrap"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

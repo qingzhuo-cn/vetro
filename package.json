@@ -1,0 +1,57 @@
+{
+  "name": "vetro",
+  "version": "1.0.0",
+  "description": "Vetro —— 玻璃态 Markdown 编辑器（桌面版）",
+  "main": "main.js",
+  "author": "Vetro",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win",
+    "build:portable": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.vetro.app",
+    "productName": "Vetro",
+    "copyright": "MIT",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "index.html",
+      "style.css",
+      "app.js",
+      "main.js",
+      "preload.js",
+      "manifest.json",
+      "sw.js",
+      "vendor/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "assets/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Vetro",
+      "artifactName": "Vetro-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Vetro-Portable-${version}.${ext}"
+    }
+  }
+}
