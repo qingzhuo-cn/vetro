@@ -1,6 +1,6 @@
 # Vetro 桌面端文档同步 · WebDAV 方案设计
 
-> 状态：**草案，未实现**。桌面版（Electron）通过标准 WebDAV 协议同步 `.md` 文档，支持 Nextcloud / ownCloud / 坚果云 / Synology NAS 等任意 WebDAV 服务器。
+> 状态：**已实现**（v1.1.0）。桌面版（Electron）通过标准 WebDAV 协议同步 `.md` 文档，支持 Nextcloud / ownCloud / 坚果云 / Synology NAS 等任意 WebDAV 服务器。三个「待确认」项均已落地：回收站 / 软删除、frontmatter 毫秒级冲突检测、自定义同步目录 + 部分文档同步。
 
 ## 1. 为什么桌面版用 WebDAV
 

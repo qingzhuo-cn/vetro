@@ -255,6 +255,7 @@ body[data-theme="light"] .orb { opacity: 0.25; }
 .sidebar.collapsed .sidebar-tools,
 .sidebar.collapsed .doc-list,
 .sidebar.collapsed .outline,
+.sidebar.collapsed .trash-list,
 .sidebar.collapsed .sidebar-foot { display: none; }
 .sidebar.collapsed .sidebar-actions { flex-direction: column; }
 .sidebar.collapsed #btnNewDoc { display: none; }
@@ -631,6 +632,27 @@ select.cfg-input { cursor: pointer; }
 .icon-preview:hover { transform: scale(1.06); }
 .icon-preview.active { border-color: var(--accent); background: var(--accent-soft); }
 .seg-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ===== 同步 / 回收站 ===== */
+.doc-sync {
+  opacity: 0; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px;
+  color: var(--fg-3); flex-shrink: 0;
+  transition: opacity var(--dur-fast), color var(--dur-fast), background-color var(--dur-fast);
+}
+.doc-sync svg { width: 14px; height: 14px; }
+.doc-item:hover .doc-sync, .doc-item:focus-within .doc-sync { opacity: 1; }
+.doc-sync.on { color: var(--accent-strong); background: var(--accent-soft); }
+.trash-list { flex: 1; overflow-y: auto; padding: 0 8px; }
+.trash-item .doc-restore, .trash-item .doc-purge { opacity: 0; transition: opacity var(--dur-fast); }
+.trash-item:hover .doc-restore, .trash-item:hover .doc-purge { opacity: 1; }
+.trash-item .doc-purge { color: var(--danger); }
+.cfg-stack { display: flex; flex-direction: column; gap: 8px; }
+.cfg-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--fg-1); cursor: pointer; }
+.cfg-check input { accent-color: var(--accent); width: 16px; height: 16px; }
+.sync-state { font-size: 11px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+.sync-state.ok { color: var(--accent-strong); }
+.sync-state.syncing { color: #f6a623; animation: pulse 0.8s ease-in-out infinite; }
+.sync-state.err { color: var(--danger); }
 
 /* ===== 响应式 ===== */
 @media (max-width: 768px) {

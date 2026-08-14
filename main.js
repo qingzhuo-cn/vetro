@@ -1,5 +1,5 @@
 /* Vetro 桌面版 · Electron 主进程
-   提供磁盘文件读写 + 系统级密钥加密；无原生菜单栏，右键菜单保留复制/粘贴。 */
+   提供磁盘文件读写 + 系统级密钥加密 + WebDAV 文档同步（无原生菜单栏）。 */
 'use strict';
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell, safeStorage } = require('electron');
 const path = require('path');
@@ -135,6 +135,120 @@ ipcMain.handle('safe-decrypt', (_e, b64) => {
   } catch (e) {
     return { ok: false, error: e.message };
   }
+});
+
+/* ===== WebDAV 客户端（无依赖，基于 Node 内置 fetch） ===== */
+
+function basicAuth(user, pass) {
+  return 'Basic ' + Buffer.from((user || '') + ':' + (pass || '')).toString('base64');
+}
+function decodeXml(s) {
+  return String(s).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+}
+function decodePath(seg) {
+  try { return decodeURIComponent(seg); } catch (e) { return seg; }
+}
+function joinUrl(base, name) {
+  return String(base).replace(/\/+$/, '') + '/' + encodeURIComponent(name);
+}
+
+async function webdavRequest(method, url, opts) {
+  const o = opts || {};
+  const h = Object.assign({}, o.headers);
+  if (o.user || o.pass) h.Authorization = basicAuth(o.user, o.pass);
+  if (o.depth != null) h.Depth = String(o.depth);
+  if (o.body !== undefined && h['Content-Type'] === undefined) h['Content-Type'] = 'text/plain; charset=utf-8';
+  const res = await fetch(url, { method, headers: h, body: o.body });
+  const text = await res.text();
+  return { status: res.status, ok: res.ok, statusText: res.statusText, text };
+}
+
+function extractXml(block, tagName) {
+  const re = new RegExp('<(?:[^>]*?:)?' + tagName + '[^>]*>([\\s\\S]*?)<\\/(?:[^>]*?:)?' + tagName + '>', 'i');
+  const m = re.exec(block);
+  return m ? m[1] : null;
+}
+
+function parsePropfind(xml) {
+  const out = [];
+  const respRe = /<(?:[^>]*?:)?response[^>]*>([\s\S]*?)<\/(?:[^>]*?:)?response>/gi;
+  let m;
+  while ((m = respRe.exec(xml))) {
+    const block = m[1];
+    const href = extractXml(block, 'href');
+    if (!href) continue;
+    const lm = extractXml(block, 'getlastmodified');
+    const cl = extractXml(block, 'getcontentlength');
+    const isDir = /collection\s*\/?>/i.test(block);
+    let name = decodePath(decodeXml(href.trim())).replace(/\/+$/, '');
+    const idx = name.lastIndexOf('/');
+    name = idx >= 0 ? name.slice(idx + 1) : name;
+    if (!name) continue;
+    out.push({
+      name,
+      mtime: lm ? new Date(lm.trim()).getTime() : 0,
+      size: cl ? (parseInt(cl.trim(), 10) || 0) : 0,
+      isDir
+    });
+  }
+  return out;
+}
+
+/* ===== WebDAV IPC ===== */
+
+ipcMain.handle('webdav-test', async (_e, cfg) => {
+  try {
+    const r = await webdavRequest('PROPFIND', cfg.url, { user: cfg.username, pass: cfg.password, depth: '0' });
+    return { ok: r.status >= 200 && r.status < 300, status: r.status, statusText: r.statusText };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
+
+ipcMain.handle('webdav-list', async (_e, cfg) => {
+  try {
+    const r = await webdavRequest('PROPFIND', cfg.url, { user: cfg.username, pass: cfg.password, depth: '1' });
+    if (r.status >= 400) return { ok: false, error: 'HTTP ' + r.status + ' ' + r.statusText };
+    return { ok: true, files: parsePropfind(r.text).filter((f) => !f.isDir) };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
+
+ipcMain.handle('webdav-get', async (_e, cfg, name) => {
+  try {
+    const r = await webdavRequest('GET', joinUrl(cfg.url, name), { user: cfg.username, pass: cfg.password });
+    if (r.status >= 400) return { ok: false, error: 'HTTP ' + r.status };
+    return { ok: true, content: r.text };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
+
+ipcMain.handle('webdav-put', async (_e, cfg, name, content) => {
+  try {
+    const r = await webdavRequest('PUT', joinUrl(cfg.url, name), { user: cfg.username, pass: cfg.password, body: String(content || '') });
+    return { ok: r.status >= 200 && r.status < 300, status: r.status };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
+
+ipcMain.handle('webdav-delete', async (_e, cfg, name) => {
+  try {
+    const r = await webdavRequest('DELETE', joinUrl(cfg.url, name), { user: cfg.username, pass: cfg.password });
+    return { ok: r.status >= 200 && r.status < 300, status: r.status };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
+
+ipcMain.handle('webdav-mkcol', async (_e, cfg) => {
+  try {
+    const r = await webdavRequest('MKCOL', cfg.url, { user: cfg.username, pass: cfg.password });
+    return { ok: r.status === 201 || r.status === 405 || (r.status >= 200 && r.status < 300), status: r.status };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
+
+ipcMain.handle('webdav-move', async (_e, cfg, from, to) => {
+  try {
+    const r = await webdavRequest('MOVE', joinUrl(cfg.url, from), {
+      user: cfg.username,
+      pass: cfg.password,
+      headers: { Destination: joinUrl(cfg.url, to), Overwrite: 'T' }
+    });
+    return { ok: r.status >= 200 && r.status < 300, status: r.status };
+  } catch (e) { return { ok: false, error: e.message }; }
 });
 
 /* ===== 生命周期 ===== */

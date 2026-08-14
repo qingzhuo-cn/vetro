@@ -95,6 +95,7 @@
         <div class="sidebar-tabs">
           <button class="sidebar-tab active" data-sidebar-tab="docs">文档</button>
           <button class="sidebar-tab" data-sidebar-tab="outline">大纲</button>
+          <button class="sidebar-tab" data-sidebar-tab="trash">回收站</button>
         </div>
         <div class="sidebar-actions">
           <button class="iconbtn" id="btnNewDoc" title="新建文档">
@@ -117,6 +118,7 @@
       </div>
       <div class="doc-list" id="docList"></div>
       <div class="outline" id="outline" hidden></div>
+      <div class="trash-list" id="trashList" hidden></div>
       <div class="sidebar-foot">
         <div class="multi-bar" id="multiBar" hidden>
           <span class="multi-count" id="multiCount">已选 0 项</span>
@@ -189,6 +191,7 @@
     <span class="status-sep"></span>
     <span id="statusMsg">就绪</span>
     <span class="spacer"></span>
+    <span id="syncState" class="sync-state off">未开启同步</span>
     <span id="aiStatus" class="ai-dot off"><span class="dot"></span>AI 未连接</span>
   </footer>
 </div>
@@ -315,6 +318,21 @@
           <button class="btn ghost sm" id="btnImportTheme">导入主题 (.json)</button>
           <button class="btn ghost sm" id="btnExportTheme">导出当前配色</button>
         </div>
+      </div>
+      <div class="cfg-group" id="syncSection">
+        <label class="cfg-label">WebDAV 同步（桌面版）</label>
+        <div class="cfg-stack">
+          <label class="cfg-check"><input type="checkbox" id="syncEnabled"> 启用同步</label>
+          <input id="syncUrl" class="cfg-input" placeholder="WebDAV 同步目录，如 https://dav.example.com/remote.php/dav/files/user/Vetro" spellcheck="false">
+          <input id="syncUser" class="cfg-input" placeholder="用户名" spellcheck="false">
+          <input id="syncPass" class="cfg-input" type="password" placeholder="密码 / 应用专用密码" spellcheck="false">
+          <div class="seg-row">
+            <button class="btn primary sm" id="btnSaveSync">保存设置</button>
+            <button class="btn ghost sm" id="btnTestSync">测试连接</button>
+            <button class="btn ghost sm" id="btnSyncNow">立即同步</button>
+          </div>
+        </div>
+        <p class="cfg-note">同步把文档作为 .md 文件写入你的 WebDAV 服务器（Nextcloud / 坚果云 / NAS 等）。凭证系统级加密保存；AI 的 API Key 不会参与同步。</p>
       </div>
       <div class="cfg-group">
         <label class="cfg-label">编辑器字号</label>

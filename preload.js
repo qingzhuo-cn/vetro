@@ -1,5 +1,5 @@
 /* Vetro 桌面版 · preload 桥接
-   通过 contextBridge 暴露安全的磁盘文件读写 + 系统级密钥加密 API 给渲染进程。 */
+   通过 contextBridge 暴露安全的磁盘文件读写 + 密钥加密 + WebDAV 同步 API。 */
 'use strict';
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -20,5 +20,16 @@ contextBridge.exposeInMainWorld('desktop', {
   secure: {
     encrypt: (text) => ipcRenderer.invoke('safe-encrypt', text),
     decrypt: (b64) => ipcRenderer.invoke('safe-decrypt', b64)
+  },
+
+  /* WebDAV 同步 */
+  webdav: {
+    test: (cfg) => ipcRenderer.invoke('webdav-test', cfg),
+    list: (cfg) => ipcRenderer.invoke('webdav-list', cfg),
+    get: (cfg, name) => ipcRenderer.invoke('webdav-get', cfg, name),
+    put: (cfg, name, content) => ipcRenderer.invoke('webdav-put', cfg, name, content),
+    del: (cfg, name) => ipcRenderer.invoke('webdav-delete', cfg, name),
+    mkcol: (cfg) => ipcRenderer.invoke('webdav-mkcol', cfg),
+    move: (cfg, from, to) => ipcRenderer.invoke('webdav-move', cfg, from, to)
   }
 });

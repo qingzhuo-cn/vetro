@@ -141,10 +141,11 @@ function defaultCfg() {
     accent: 'teal',
     icon: 'markdown',
     customThemes: [],
+    sync: { enabled: false, url: '', username: '', password: '', passwordEnc: '' },
     ai: { endpoint: '', key: '', keyEnc: '', model: 'deepseek-chat', ok: false }
   };
 }
-const state = { docs: [], activeId: null, cfg: defaultCfg() };
+const state = { docs: [], trash: [], activeId: null, cfg: defaultCfg(), syncMeta: {} };
 
 /* 文档级撤销栈 + 多选 + 侧栏页签（运行时态，不持久化） */
 const undoStack = [];
@@ -156,10 +157,13 @@ let stopController = null;
 function applyState(data) {
   if (!data || typeof data !== 'object') return;
   if (Array.isArray(data.docs)) state.docs = data.docs;
+  if (Array.isArray(data.trash)) state.trash = data.trash;
   if (data.activeId != null) state.activeId = data.activeId;
+  if (data.syncMeta && typeof data.syncMeta === 'object') state.syncMeta = data.syncMeta;
   const base = defaultCfg();
   state.cfg = Object.assign(base, data.cfg || {});
   state.cfg.ai = Object.assign(base.ai, (data.cfg && data.cfg.ai) || {});
+  state.cfg.sync = Object.assign(base.sync, (data.cfg && data.cfg.sync) || {});
 }
 
 async function load() {
@@ -197,7 +201,7 @@ function markSaved() {
 async function save() {
   try {
     // 明文 API Key 永不落盘（仅持久化加密后的 keyEnc）
-    const json = JSON.stringify(state, (k, v) => (k === 'key' ? undefined : v));
+    const json = JSON.stringify(state, (k, v) => (k === 'key' || k === 'password' ? undefined : v));
     await idbSet(STORE_KEY, json);
     markSaved();
   }
@@ -256,7 +260,7 @@ function highlightBlocks(root) {
 }
 
 /* ===== 文档级撤销 ===== */
-function snapshot() { return JSON.stringify({ docs: state.docs, activeId: state.activeId, cfg: state.cfg }); }
+function snapshot() { return JSON.stringify({ docs: state.docs, trash: state.trash, activeId: state.activeId, cfg: state.cfg }); }
 function pushUndo() {
   undoStack.push(snapshot());
   if (undoStack.length > 30) undoStack.shift();
@@ -266,6 +270,7 @@ function undo() {
   if (!undoStack.length) { toast('没有可撤销的操作', 'err'); return; }
   const s = JSON.parse(undoStack.pop());
   state.docs = s.docs; state.activeId = s.activeId;
+  if (s.trash) state.trash = s.trash;
   if (s.cfg) state.cfg = s.cfg;
   exitMultiSelect();
   save(); renderDocList(); renderEditor(); applyView();
@@ -302,17 +307,18 @@ function createDoc(name = '未命名文档.md', content = '', filePath = null) {
 async function deleteDoc(id) {
   const d = state.docs.find((x) => x.id === id);
   if (!d) return;
-  const ok = await confirmDialog({ title: '删除文档', message: '确定删除「' + d.name + '」吗？此操作不可撤销（可用撤销按钮恢复）。', confirmLabel: '删除', danger: true });
+  const ok = await confirmDialog({ title: '删除文档', message: '将「' + d.name + '」移入回收站？（可在回收站恢复或彻底删除）', confirmLabel: '移入回收站', danger: true });
   if (!ok) return;
   pushUndo();
   const idx = state.docs.findIndex((x) => x.id === id);
   if (idx < 0) return;
-  state.docs.splice(idx, 1);
+  const [removed] = state.docs.splice(idx, 1);
+  state.trash.unshift(Object.assign({}, removed, { deletedAt: Date.now() }));
   if (state.activeId === id) state.activeId = state.docs.length ? state.docs[0].id : null;
   save();
   renderDocList();
   renderEditor();
-  toast('已删除文档');
+  toast('已移入回收站');
 }
 
 async function renameDoc(id) {
@@ -395,11 +401,12 @@ async function deleteSelected() {
   const ok = await confirmDialog({ title: '批量删除', message: '确定删除选中的 ' + ids.length + ' 个文档吗？（可点「撤销」恢复）', confirmLabel: '删除', danger: true });
   if (!ok) return;
   pushUndo();
+  state.docs.filter((d) => ids.includes(d.id)).forEach((d) => state.trash.unshift(Object.assign({}, d, { deletedAt: Date.now() })));
   state.docs = state.docs.filter((d) => !ids.includes(d.id));
   if (ids.includes(state.activeId)) state.activeId = state.docs.length ? state.docs[0].id : null;
   exitMultiSelect();
   save(); renderDocList(); renderEditor();
-  toast('已删除 ' + ids.length + ' 个文档', 'ok');
+  toast('已将 ' + ids.length + ' 个文档移入回收站', 'ok');
 }
 
 /* ===== 渲染 ===== */
@@ -457,6 +464,7 @@ function renderDocList(force) {
         <div class="doc-name">${esc(d.name || '未命名')}</div>
         <div class="doc-sub">${words} 字 · ${fmtTime(d.updatedAt)}</div>
       </div>
+      ${syncEnabled() ? `<button class="doc-sync ${d.sync !== false ? 'on' : ''}" title="${d.sync !== false ? '已参与同步（点击关闭）' : '未参与同步（点击开启）'}"><svg viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 1 1 .5-8.97A6 6 0 0 1 19 10.5a3.5 3.5 0 0 1-.5 6.97"/></svg></button>` : ''}
       <button class="doc-del" title="删除" aria-label="删除文档">
         <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
       </button>`;
@@ -469,6 +477,8 @@ function renderDocList(force) {
     if (cb) cb.addEventListener('click', (e) => { e.stopPropagation(); toggleSelected(d.id); });
     item.addEventListener('dblclick', () => { if (!multiSelect) renameDoc(d.id); });
     item.querySelector('.doc-del').addEventListener('click', (e) => { e.stopPropagation(); deleteDoc(d.id); });
+    const syncBtn = item.querySelector('.doc-sync');
+    if (syncBtn) syncBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleDocSync(d.id); });
     list.appendChild(item);
   });
   updateMultiBar();
@@ -547,7 +557,10 @@ function switchSidebarTab(tab) {
   $$('.sidebar-tab').forEach((b) => b.classList.toggle('active', b.dataset.sidebarTab === tab));
   $('#docList').hidden = tab !== 'docs';
   $('#outline').hidden = tab !== 'outline';
+  $('#trashList').hidden = tab !== 'trash';
   if (tab === 'outline') renderOutline();
+  else if (tab === 'trash') renderTrash();
+  else renderDocList();
 }
 
 /* ===== 查找替换 ===== */
@@ -1115,6 +1128,14 @@ function openSettings() {
   applyTheme(); applyFontSize(); applyAccent(); applyIcon();
   renderAccentGrid(); renderIconGrid();
   $$('#viewSeg .seg-item').forEach((b) => b.classList.toggle('active', b.dataset.viewMode === state.cfg.viewMode));
+  // 同步设置回填
+  const s = state.cfg.sync || {};
+  const sec = $('#syncSection');
+  if (sec) sec.hidden = !window.desktop;
+  $('#syncEnabled').checked = !!s.enabled;
+  $('#syncUrl').value = s.url || '';
+  $('#syncUser').value = s.username || '';
+  $('#syncPass').value = s.password || '';
 }
 function closeSettings() { closeModal($('#settingsModal')); }
 
@@ -1148,6 +1169,12 @@ function bindSettings() {
     e.target.value = '';
   });
   $('#btnExportTheme').addEventListener('click', exportTheme);
+
+  // WebDAV 同步
+  $('#syncEnabled').addEventListener('change', (e) => { state.cfg.sync.enabled = e.target.checked; save(); updateSyncUI(); renderDocList(true); });
+  $('#btnSaveSync').addEventListener('click', saveSyncConfig);
+  $('#btnTestSync').addEventListener('click', testSyncConnection);
+  $('#btnSyncNow').addEventListener('click', syncNow);
 }
 
 /* ===== AI 助手 ===== */
@@ -1526,10 +1553,219 @@ function bindTopbar() {
   }
 }
 
+/* ===== WebDAV 同步 ===== */
+const SYNC_TRASH = '.trash';
+
+function syncEnabled() {
+  return !!(window.desktop && window.desktop.webdav && state.cfg.sync && state.cfg.sync.enabled && state.cfg.sync.url);
+}
+function syncCfg() {
+  return { url: state.cfg.sync.url, username: state.cfg.sync.username, password: state.cfg.sync.password || '' };
+}
+function sanitizeFilename(name) {
+  let s = String(name || '未命名.md').replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').trim();
+  if (!s) s = '未命名.md';
+  if (!/\.(md|markdown|txt)$/i.test(s)) s += '.md';
+  s = s.replace(/^\.+/, '');
+  return s;
+}
+function wrapSyncContent(doc) {
+  return '---\nvetro-id: ' + doc.id + '\nvetro-updated: ' + doc.updatedAt + '\n---\n' + (doc.content || '');
+}
+function unwrapSyncContent(text) {
+  const m = /^---\s*\n([\s\S]*?)\n---\s*\n?/.exec(text || '');
+  if (!m) return { id: null, updated: 0, content: text || '' };
+  const idM = /vetro-id:\s*(\S+)/.exec(m[1]);
+  const upM = /vetro-updated:\s*(\d+)/.exec(m[1]);
+  return { id: idM ? idM[1] : null, updated: upM ? parseInt(upM[1], 10) : 0, content: (text || '').slice(m[0].length) };
+}
+function getSyncDocs() { return state.docs.filter((d) => d.sync !== false); }
+
+async function encryptSecret(text) {
+  if (!text) return '';
+  if (window.desktop && window.desktop.secure) {
+    try { const r = await window.desktop.secure.encrypt(text); if (r && r.ok) return r.data; } catch (e) {}
+  }
+  try { return 'b64:' + btoa(unescape(encodeURIComponent(text))); } catch (e) { return ''; }
+}
+async function decryptSecret(b64) {
+  if (!b64) return '';
+  if (b64.indexOf('b64:') === 0) {
+    try { return decodeURIComponent(escape(atob(b64.slice(4)))); } catch (e) { return ''; }
+  }
+  if (window.desktop && window.desktop.secure) {
+    try { const r = await window.desktop.secure.decrypt(b64); if (r && r.ok) return r.data; } catch (e) {}
+  }
+  return '';
+}
+async function restoreSyncPassword() {
+  state.cfg.sync.password = await decryptSecret(state.cfg.sync.passwordEnc || '');
+}
+async function saveSyncConfig() {
+  state.cfg.sync.url = ($('#syncUrl').value || '').trim();
+  state.cfg.sync.username = ($('#syncUser').value || '').trim();
+  state.cfg.sync.password = $('#syncPass').value;
+  state.cfg.sync.passwordEnc = await encryptSecret(state.cfg.sync.password);
+  save();
+  updateSyncUI();
+  renderDocList(true);
+  toast('同步设置已保存', 'ok');
+}
+
+function setSyncStatus(st) {
+  const el = $('#syncState');
+  if (!el) return;
+  const map = { ok: '已同步', syncing: '同步中…', err: '同步失败', off: '未开启同步' };
+  el.textContent = map[st] || '';
+  el.className = 'sync-state ' + (st || '');
+}
+function updateSyncUI() {
+  setSyncStatus(syncEnabled() ? 'ok' : 'off');
+}
+
+async function testSyncConnection() {
+  if (!syncEnabled()) { toast('请先填写并保存 WebDAV 配置', 'err'); return; }
+  setSyncStatus('syncing');
+  const r = await window.desktop.webdav.test(syncCfg());
+  if (r && r.ok) { setSyncStatus('ok'); toast('WebDAV 连接成功', 'ok'); }
+  else { setSyncStatus('err'); toast('WebDAV 连接失败：' + ((r && (r.error || ('HTTP ' + r.status))) || '未知错误'), 'err'); }
+}
+
+async function ensureSyncDir() {
+  const r = await window.desktop.webdav.mkcol(syncCfg());
+  return r && r.ok;
+}
+
+async function syncNow() {
+  if (!syncEnabled()) { toast('请先启用并配置 WebDAV 同步', 'err'); return; }
+  setSyncStatus('syncing');
+  try {
+    await ensureSyncDir();
+    const lr = await window.desktop.webdav.list(syncCfg());
+    if (!lr || !lr.ok) throw new Error(lr && lr.error ? lr.error : '读取远端目录失败');
+    const remote = lr.files || [];
+    const remoteByName = new Map(remote.map((f) => [f.name, f]));
+    const syncDocs = getSyncDocs();
+    const localByName = new Map(syncDocs.map((d) => [sanitizeFilename(d.name), d]));
+
+    // 1) 推送本地新增 / 更新
+    for (const d of syncDocs) {
+      const fname = sanitizeFilename(d.name);
+      const meta = state.syncMeta[fname];
+      if (!remoteByName.has(fname) || !meta || d.updatedAt > (meta.updatedAt || 0)) {
+        await window.desktop.webdav.put(syncCfg(), fname, wrapSyncContent(d));
+        state.syncMeta[fname] = { id: d.id, updatedAt: d.updatedAt, remoteMtime: remoteByName.has(fname) ? remoteByName.get(fname).mtime : Date.now() };
+      }
+    }
+
+    // 2) 拉取远端新增 / 更新（mtime 变化才 GET，比较 frontmatter 毫秒时间戳）
+    for (const f of remote) {
+      const meta = state.syncMeta[f.name];
+      const d = localByName.get(f.name);
+      const changed = !d || !meta || f.mtime !== meta.remoteMtime;
+      if (!changed) continue;
+      const g = await window.desktop.webdav.get(syncCfg(), f.name);
+      if (!g || !g.ok) continue;
+      const rdoc = unwrapSyncContent(g.content);
+      if (!d) {
+        const nd = { id: rdoc.id || uid(), name: f.name, content: rdoc.content, filePath: null, createdAt: Date.now(), updatedAt: rdoc.updated || Date.now(), sync: true };
+        state.docs.unshift(nd);
+        state.syncMeta[f.name] = { id: nd.id, updatedAt: nd.updatedAt, remoteMtime: f.mtime };
+      } else if (rdoc.updated > d.updatedAt) {
+        d.content = rdoc.content; d.updatedAt = rdoc.updated; d.sync = true;
+        state.syncMeta[f.name] = { id: d.id, updatedAt: rdoc.updated, remoteMtime: f.mtime };
+      } else {
+        state.syncMeta[f.name] = { id: d.id, updatedAt: d.updatedAt, remoteMtime: f.mtime };
+      }
+    }
+
+    // 3) 软删除：本地已删但远端还在 → 移入远端 .trash/
+    const syncNames = new Set(syncDocs.map((d) => sanitizeFilename(d.name)));
+    for (const fname of Object.keys(state.syncMeta)) {
+      if (!syncNames.has(fname) && remoteByName.has(fname)) {
+        await window.desktop.webdav.move(syncCfg(), fname, SYNC_TRASH + '/' + fname);
+        delete state.syncMeta[fname];
+      }
+    }
+
+    // 4) 远端被删但本地还在 → 重新推送
+    for (const fname of Object.keys(state.syncMeta)) {
+      if (!remoteByName.has(fname)) {
+        const d = localByName.get(fname);
+        if (d) {
+          await window.desktop.webdav.put(syncCfg(), fname, wrapSyncContent(d));
+          state.syncMeta[fname] = { id: d.id, updatedAt: d.updatedAt, remoteMtime: Date.now() };
+        }
+      }
+    }
+
+    await save();
+    setSyncStatus('ok');
+    toast('同步完成', 'ok');
+  } catch (e) {
+    setSyncStatus('err');
+    toast('同步失败：' + e.message, 'err');
+  }
+}
+
+function toggleDocSync(id) {
+  const d = state.docs.find((x) => x.id === id);
+  if (!d) return;
+  d.sync = d.sync === false ? true : false;
+  save();
+  renderDocList();
+}
+
+/* ===== 回收站 ===== */
+function restoreTrashDoc(id) {
+  const idx = state.trash.findIndex((t) => t.id === id);
+  if (idx < 0) return;
+  const doc = state.trash.splice(idx, 1)[0];
+  delete doc.deletedAt;
+  state.docs.unshift(doc);
+  state.activeId = doc.id;
+  save(); renderDocList(); renderEditor(); renderTrash();
+  toast('已恢复「' + doc.name + '」');
+}
+async function purgeTrashDoc(id) {
+  const idx = state.trash.findIndex((t) => t.id === id);
+  if (idx < 0) return;
+  const ok = await confirmDialog({ title: '彻底删除', message: '彻底删除「' + state.trash[idx].name + '」？此操作不可恢复。', confirmLabel: '删除', danger: true });
+  if (!ok) return;
+  state.trash.splice(state.trash.findIndex((t) => t.id === id), 1);
+  save(); renderTrash();
+  toast('已彻底删除');
+}
+function renderTrash() {
+  const list = $('#trashList');
+  if (!list) return;
+  if (!state.trash.length) {
+    list.innerHTML = '<div class="doc-empty"><p>回收站为空</p><span>删除的文档会出现在这里，可恢复或彻底删除</span></div>';
+    return;
+  }
+  list.innerHTML = '';
+  state.trash.forEach((d) => {
+    const item = document.createElement('div');
+    item.className = 'doc-item trash-item';
+    item.innerHTML = `
+      <div class="doc-ico">🗑</div>
+      <div class="doc-meta">
+        <div class="doc-name">${esc(d.name || '未命名')}</div>
+        <div class="doc-sub">删除于 ${fmtTime(d.deletedAt)}</div>
+      </div>
+      <button class="btn ghost sm doc-restore">恢复</button>
+      <button class="btn ghost sm doc-purge">彻底删除</button>`;
+    item.querySelector('.doc-restore').addEventListener('click', () => restoreTrashDoc(d.id));
+    item.querySelector('.doc-purge').addEventListener('click', () => purgeTrashDoc(d.id));
+    list.appendChild(item);
+  });
+}
+
 /* ===== 启动 ===== */
 async function boot() {
   await load();
   await restoreKey();
+  await restoreSyncPassword();
   // 迁移旧版明文 API Key → 加密存储
   if (state.cfg.ai.key && !state.cfg.ai.keyEnc) {
     await persistKey();
@@ -1589,9 +1825,13 @@ async function boot() {
   applyAiStatus();
   updateUndoBtn();
   switchSidebarTab('docs');
+  updateSyncUI();
 
   // 浏览器 / 云端版：提示 AI 的密钥安全与 CORS 限制
   if (!window.desktop) { const w = $('#aiCloudWarn'); if (w) w.hidden = false; }
+
+  // 启动后自动同步一次
+  if (syncEnabled()) setTimeout(() => syncNow(), 1500);
 
   if (window.innerWidth < 900) $('#sidebar').classList.add('collapsed');
 }
