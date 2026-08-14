@@ -9,7 +9,7 @@
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![zero-dep](https://img.shields.io/badge/backend-none-static-orange)
 
-**纯静态单文件应用 · 无需后端 · 双击即用 · 可部署到 Cloudflare Pages**
+**纯静态应用 · 无后端 · 双击即用 · 可部署到 Cloudflare Pages**
 
 </div>
 
@@ -26,7 +26,7 @@
 | 🖼️ **图片粘贴** | 截图后 `Ctrl+V` 直接内嵌，也支持拖入图片 |
 | 🤖 **AI 助手** | 接入任意 **OpenAI 兼容 API**，流式输出，改写 / 润色 / 续写 / 翻译 / 总结 |
 | 💾 **本地持久化** | 数据存于 IndexedDB（无 5MB 限制），API Key 系统级加密，支持导出 `.md` |
-| 📦 **可安装** | 提供 Windows 安装包 / 免安装版（`dist\Vetro-*.exe`），也可作为 PWA 安装 |
+| 📦 **可安装** | 提供 Windows 安装包 / 免安装版（见 [Releases](https://github.com/qingzhuo-cn/vetro/releases)），也可作为 PWA 安装 |
 | 🎨 **玻璃态设计** | 暗色毛玻璃 + 渐变光晕，支持暗色 / 亮色 / 跟随系统三种外观 |
 | 🎨 **主题定制** | 8 套强调色 + 4 种图标样式，支持导入 / 导出 `.json` 主题 |
 | ✨ **流畅动效** | 抽屉 / 弹窗 / 侧栏 / 页签 / Toast 全程弹簧缓动，支持「减少动态效果」 |
@@ -36,21 +36,31 @@
 
 ## 🚀 快速开始
 
-> **装到电脑（推荐）**：运行 `npm run build`，在 `dist/` 下得到 `Vetro-Setup-1.0.0.exe`（安装版）与 `Vetro-Portable-1.0.0.exe`（免安装版），双击即可安装/运行。
+### 方式一：直接下载（推荐）
 
-### 方式一：直接双击（最简）
+从 [GitHub Releases](https://github.com/qingzhuo-cn/vetro/releases) 下载最新版：
 
-用浏览器打开 `index.html` 即可。功能齐全，但「安装为桌面 App」需要走下面的方式。
+- `Vetro-Setup-x.x.x.exe` —— 安装版（可选安装目录，创建桌面 / 开始菜单快捷方式）
+- `Vetro-Portable-x.x.x.exe` —— 免安装版（双击即用）
 
-### 方式二：本地服务（推荐）
+### 方式二：自行构建
 
 ```bash
-cd glassmark
+npm install
+npm run build
+# 产物在 dist/ 下：Vetro-Setup-*.exe 与 Vetro-Portable-*.exe
+```
+
+### 方式三：浏览器 / 本地服务
+
+用浏览器直接打开 `index.html`，或用静态服务器：
+
+```bash
 python -m http.server 8765
 # 浏览器打开 http://localhost:8765
 ```
 
-### 方式三：部署到 Cloudflare Pages
+### 方式四：部署到 Cloudflare Pages
 
 1. 把整个 `glassmark` 目录推到 GitHub 仓库；
 2. 打开 Cloudflare Dashboard → **Workers & Pages** → **Create** → **Pages**；
