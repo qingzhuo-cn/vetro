@@ -1,57 +1,33 @@
 {
   "name": "vetro",
-  "version": "1.3.0",
-  "description": "Vetro —— 玻璃态 Markdown 编辑器（桌面版）",
-  "main": "main.js",
-  "author": "Vetro",
-  "license": "MIT",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
   "scripts": {
-    "start": "electron .",
-    "build": "electron-builder --win",
-    "build:portable": "electron-builder --win portable"
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.10.4",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.8",
+    "dompurify": "^3.4.13",
+    "highlight.js": "^11.12.0",
+    "marked": "^18.0.9",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8"
-  },
-  "build": {
-    "appId": "com.vetro.app",
-    "productName": "Vetro",
-    "copyright": "MIT",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "index.html",
-      "style.css",
-      "app.js",
-      "main.js",
-      "preload.js",
-      "manifest.json",
-      "sw.js",
-      "vendor/**/*",
-      "assets/**/*",
-      "package.json"
-    ],
-    "win": {
-      "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
-      ],
-      "icon": "assets/icon.ico",
-      "signAndEditExecutable": false
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Vetro",
-      "artifactName": "Vetro-Setup-${version}.${ext}"
-    },
-    "portable": {
-      "artifactName": "Vetro-Portable-${version}.${ext}"
-    }
+    "@types/dompurify": "^3.0.5",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.1"
   }
 }

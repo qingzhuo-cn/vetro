@@ -1,6 +1,8 @@
-# 依赖与构建产物（不提交，安装包发布到 GitHub Releases）
+# 依赖与构建产物
 node_modules/
 dist/
+src-tauri/target/
+src-tauri/gen/
 *.log
 .DS_Store
 Thumbs.db
