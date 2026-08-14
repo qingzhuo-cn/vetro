@@ -1299,6 +1299,7 @@ function openAi() {
   captureEditorSelection();
   const box = $('#aiSelText');
   if (box) box.value = editorSelection.text;
+  autoGrowSel();
   updateAiSelHint();
   updateRunBtnLabel();
   $('#aiBackdrop').classList.add('show');
@@ -1334,9 +1335,7 @@ function bindAi() {
   $('#aiAction').addEventListener('change', updateRunBtnLabel);
   $('#btnFetchModels').addEventListener('click', fetchModels);
   $('#aiSelText').addEventListener('input', () => {
-    const ta = $('#aiSelText');
-    ta.style.height = 'auto';
-    ta.style.height = Math.min(ta.scrollHeight, 360) + 'px';
+    autoGrowSel();
     updateAiSelHint(); updateRunBtnLabel();
   });
 }
@@ -1355,6 +1354,15 @@ function updateRunBtnLabel() {
   $('#btnRunAiLabel').textContent = map[a] || '执行 AI 操作';
 }
 
+function autoGrowSel() {
+  const ta = $('#aiSelText');
+  if (!ta) return;
+  const drawer = $('#aiDrawer');
+  const cap = drawer ? Math.round(drawer.clientHeight * 2 / 3) : 360;
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, cap) + 'px';
+}
+
 function captureEditorSelection() {
   const ed = $('#editor');
   if (!ed) return;
@@ -1363,6 +1371,7 @@ function captureEditorSelection() {
   if (text) {
     const box = $('#aiSelText');
     if (box) box.value = text;
+    autoGrowSel();
   }
   updateAiSelHint();
   updateRunBtnLabel();
@@ -1374,7 +1383,13 @@ function updateAiSelHint() {
   const t = $('#aiSelText') ? $('#aiSelText').value.trim() : '';
   if (t) {
     const preview = t.length > 24 ? t.slice(0, 24) + '…' : t;
-    el.innerHTML = '已选 <b>' + countWords(t) + '</b> 字（可编辑）：「' + esc(preview) + '」';
+    el.innerHTML = '已选 <b>' + countWords(t) + '</b> 字（可编辑）：「' + esc(preview) + '」 <button class="ai-sel-clear" title="清除选中，改为处理整篇文档">清除</button>';
+    const clearBtn = el.querySelector('.ai-sel-clear');
+    if (clearBtn) clearBtn.addEventListener('click', () => {
+      const box = $('#aiSelText');
+      if (box) { box.value = ''; box.style.height = 'auto'; }
+      updateAiSelHint(); updateRunBtnLabel();
+    });
   } else {
     el.textContent = '未选中 —— 将处理整篇文档';
   }

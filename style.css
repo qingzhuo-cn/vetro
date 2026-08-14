@@ -530,6 +530,8 @@ select.cfg-input { cursor: pointer; }
 .ai-run-row .btn.grow { flex: 1; justify-content: center; }
 .ai-sel-hint { font-size: 11px; color: var(--fg-2); line-height: 1.5; padding: 6px 10px; border-radius: var(--radius-sm); background: var(--glass-bg-lo); border: 1px solid var(--glass-border); }
 .ai-sel-hint b { color: var(--accent-strong); font-weight: 700; }
+.ai-sel-clear { color: var(--accent-strong); font-size: 11px; padding: 0 4px; border-radius: 4px; }
+.ai-sel-clear:hover { background: var(--accent-soft); }
 
 /* ===== 弹窗 ===== */
 .modal-backdrop {
