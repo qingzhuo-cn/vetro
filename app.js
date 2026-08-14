@@ -153,6 +153,7 @@ let sidebarTab = 'docs';
 let multiSelect = false;
 const selected = new Set();
 let stopController = null;
+let editorSelection = { text: '', start: 0, end: 0 };
 
 function applyState(data) {
   if (!data || typeof data !== 'object') return;
@@ -952,6 +953,11 @@ function bindEditor() {
     }
   });
 
+  // 实时捕获选中文本（改写/润色/翻译依赖）
+  ed.addEventListener('mouseup', captureEditorSelection);
+  ed.addEventListener('keyup', captureEditorSelection);
+  ed.addEventListener('blur', captureEditorSelection);
+
   $$('.tab[data-view]', $('#viewTabs')).forEach((t) => {
     t.addEventListener('click', () => {
       state.cfg.viewMode = t.dataset.view;
@@ -1203,6 +1209,9 @@ function openAi() {
   $('#cfgKey').value = state.cfg.ai.key || '';
   $('#cfgModel').value = state.cfg.ai.model || 'deepseek-chat';
   applyAiStatus();
+  captureEditorSelection();
+  updateAiSelHint();
+  updateRunBtnLabel();
   $('#aiBackdrop').classList.add('show');
   $('#aiDrawer').classList.add('open');
   $('#aiDrawer').setAttribute('aria-hidden', 'false');
@@ -1239,8 +1248,40 @@ function bindAi() {
 
 function updateRunBtnLabel() {
   const a = $('#aiAction').value;
-  const map = { '改写': '改写选中文本', '润色': '润色选中文本', '续写': '续写光标之后', '翻译': '翻译为中文', '总结': '总结当前文档', '自由': '发送给 AI' };
+  const hasSel = !!(editorSelection && editorSelection.text);
+  const map = {
+    '改写': hasSel ? '改写选中文本' : '改写整篇文档',
+    '润色': hasSel ? '润色选中文本' : '润色整篇文档',
+    '续写': '续写光标之后',
+    '翻译': hasSel ? '翻译选中文本' : '翻译整篇文档',
+    '总结': '总结当前文档',
+    '自由': '发送给 AI'
+  };
   $('#btnRunAiLabel').textContent = map[a] || '执行 AI 操作';
+}
+
+function captureEditorSelection() {
+  const ed = $('#editor');
+  if (!ed) return;
+  editorSelection = {
+    text: ed.value.slice(ed.selectionStart, ed.selectionEnd),
+    start: ed.selectionStart,
+    end: ed.selectionEnd
+  };
+  updateAiSelHint();
+  updateRunBtnLabel();
+}
+
+function updateAiSelHint() {
+  const el = $('#aiSelHint');
+  if (!el) return;
+  const t = editorSelection ? editorSelection.text : '';
+  if (t) {
+    const preview = t.length > 24 ? t.slice(0, 24) + '…' : t;
+    el.innerHTML = '已选中 <b>' + countWords(t) + '</b> 字：「' + esc(preview) + '」';
+  } else {
+    el.textContent = '未选中文本 —— 将处理整篇文档';
+  }
 }
 
 function setAiResult(text) {
@@ -1392,32 +1433,39 @@ async function runAi() {
   const action = $('#aiAction').value;
   const extra = ($('#aiCustomPrompt').value || '').trim();
   const ed = $('#editor');
-  const selText = ed.value.slice(ed.selectionStart, ed.selectionEnd);
+  captureEditorSelection();
+  const selText = editorSelection.text;
+  const isSel = !!selText;
 
   let sys = '', user = '';
   const ctxDoc = d ? d.content : '';
 
   switch (action) {
-    case '改写':
-      if (!selText) { toast('请先在编辑器中选中文本', 'err'); return; }
-      sys = '你是中文写作助手，按用户要求改写选中的文本。只输出改写后的文本，不要加解释或代码块。';
-      user = `改写以下文本${extra ? '，要求：' + extra : ''}：\n\n${selText}`;
+    case '改写': {
+      const target = selText || ctxDoc;
+      if (!target) { toast('文档为空', 'err'); return; }
+      sys = '你是中文写作助手，按用户要求改写文本。只输出改写后的文本，不要加解释或代码块。';
+      user = `改写以下${isSel ? '选中文本' : '文档'}${extra ? '，要求：' + extra : ''}：\n\n${target}`;
       break;
-    case '润色':
-      if (!selText) { toast('请先在编辑器中选中文本', 'err'); return; }
-      sys = '你是资深编辑，对选中文本进行润色：修正语病、提升表达、保持原意不动。只输出润色后的 Markdown 文本。';
-      user = `润色以下内容${extra ? '，额外要求：' + extra : ''}：\n\n${selText}`;
+    }
+    case '润色': {
+      const target = selText || ctxDoc;
+      if (!target) { toast('文档为空', 'err'); return; }
+      sys = '你是资深编辑，对文本进行润色：修正语病、提升表达、保持原意不动。只输出润色后的 Markdown 文本。';
+      user = `润色以下${isSel ? '选中内容' : '文档'}${extra ? '，额外要求：' + extra : ''}：\n\n${target}`;
       break;
+    }
     case '续写':
       sys = '你是 Markdown 写作助手，根据上下文续写文档。只输出续写的新增部分，不要重复原文。';
       user = `这是当前文档：\n\n${ctxDoc}\n\n请在文档末尾续写${extra ? '，要求：' + extra : ''}。只输出新增内容。`;
       break;
-    case '翻译':
+    case '翻译': {
       const target = selText || ctxDoc;
       if (!target) { toast('文档为空', 'err'); return; }
       sys = '你是专业翻译，将内容翻译为流畅的简体中文（若已是中文则译为英文）。保持 Markdown 格式。只输出译文。';
-      user = `翻译以下内容${extra ? '，额外要求：' + extra : ''}：\n\n${target}`;
+      user = `翻译以下${isSel ? '选中文本' : '文档'}${extra ? '，额外要求：' + extra : ''}：\n\n${target}`;
       break;
+    }
     case '总结':
       if (!ctxDoc) { toast('文档为空', 'err'); return; }
       sys = '你用 Markdown 写一份结构化总结：要点、关键信息、可执行项（如有）。只输出总结。';

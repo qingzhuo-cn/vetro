@@ -528,6 +528,8 @@ select.cfg-input { cursor: pointer; }
 .ai-cols { display: flex; gap: 6px; }
 .ai-run-row { display: flex; gap: 6px; }
 .ai-run-row .btn.grow { flex: 1; justify-content: center; }
+.ai-sel-hint { font-size: 11px; color: var(--fg-2); line-height: 1.5; padding: 6px 10px; border-radius: var(--radius-sm); background: var(--glass-bg-lo); border: 1px solid var(--glass-border); }
+.ai-sel-hint b { color: var(--accent-strong); font-weight: 700; }
 
 /* ===== 弹窗 ===== */
 .modal-backdrop {

@@ -247,13 +247,14 @@
   <div id="aiChatView" class="ai-chat" hidden>
     <div class="ai-tools">
       <select id="aiAction" class="cfg-input">
-        <option value="改写">改写选中文本</option>
-        <option value="润色">润色选中文本</option>
+        <option value="改写">改写</option>
+        <option value="润色">润色</option>
         <option value="续写">续写 (光标后)</option>
         <option value="翻译">翻译为中文</option>
         <option value="总结">总结当前文档</option>
         <option value="自由">自由对话</option>
       </select>
+      <div class="ai-sel-hint" id="aiSelHint"></div>
       <div class="ai-contextrow">
         <textarea id="aiCustomPrompt" class="ai-custom" placeholder="附加指令（可选）：例如「用更简洁的口吻」" rows="2" spellcheck="false"></textarea>
       </div>
