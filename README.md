@@ -62,7 +62,7 @@ python -m http.server 8765
 
 ### 方式四：部署到 Cloudflare Pages
 
-1. 把整个 `glassmark` 目录推到 GitHub 仓库；
+1. 把整个 `vetro` 目录推到 GitHub 仓库；
 2. 打开 Cloudflare Dashboard → **Workers & Pages** → **Create** → **Pages**；
 3. 连接该仓库，构建配置：
    - **Framework preset**: None
@@ -118,7 +118,7 @@ python -m http.server 8765
 ## 📁 项目结构
 
 ```
-glassmark/
+vetro/
 ├── index.html      # 页面骨架 + UI 结构（应用内图标均为内联 SVG）
 ├── style.css       # 玻璃态暗色主题（CSS 变量，暗/亮可切换）
 ├── app.js          # 全部逻辑：渲染、拖拽、存储、AI 调用、密钥加解密
