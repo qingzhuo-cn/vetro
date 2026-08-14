@@ -2079,11 +2079,11 @@ async function boot() {
 
 | 操作 | 方式 |
 |---|---|
-| 打开 | Ctrl/⌘+O |
-| 保存到磁盘 | Ctrl/⌘+S |
-| 查找 | Ctrl/⌘+F |
-| 替换 | Ctrl/⌘+H |
-| 撤销文档操作 | Ctrl/⌘+Shift+Z |
+| 打开 | Ctrl+O |
+| 保存到磁盘 | Ctrl+S |
+| 查找 | Ctrl+F |
+| 替换 | Ctrl+H |
+| 撤销文档操作 | Ctrl+Shift+Z |
 | 重命名 | 双击左侧文档名 |
 | 批量合并 | 侧边栏「多选」→ 勾选 → 合并 |
 
