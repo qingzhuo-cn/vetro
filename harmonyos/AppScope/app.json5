@@ -1,0 +1,10 @@
+{
+  "app": {
+    "bundleName": "com.qingzhuo.vetro",
+    "vendor": "qingzhuo-cn",
+    "versionCode": 20220000,
+    "versionName": "2.2.0",
+    "icon": "$media:app_icon",
+    "label": "$string:app_name"
+  }
+}

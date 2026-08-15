@@ -1,0 +1,9 @@
+{
+  "name": "entry",
+  "version": "2.2.0",
+  "description": "Vetro entry module",
+  "main": "",
+  "author": "qingzhuo-cn",
+  "license": "MIT",
+  "dependencies": {}
+}
