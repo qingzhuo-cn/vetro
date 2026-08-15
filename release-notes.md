@@ -1,6 +1,7 @@
-Vetro v2.1.0 — SQLite 存储 + 全文搜索 + AI 流式
+Vetro v2.2.0 — 侧栏升级 + 内置使用说明
 
-从 Electron 重写为 **Tauri 2**（单进程、体积更小、启动更快）。
+- **侧栏收起模式**：收起后「文档 / 大纲 / 回收站」变为从上到下的纵向标签栏，点击即可展开对应面板
+- **内置使用说明**：首次启动自动创建「使用说明.md」，顶栏 ❓ 随时可打开
 
 技术栈：Tauri 2 + React 19 + TypeScript + Vite + CodeMirror 6 + Zustand + SQLite(FTS5)
 
