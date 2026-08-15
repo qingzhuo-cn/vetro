@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore, buildTree, docTreeContent, childrenOf } from './store';
-import { renderMarkdown, highlightCode, previewElRef } from './markdown';
+import { renderMarkdown, highlightCode, previewElRef, htmlToMarkdown } from './markdown';
 import { createEditor, editorViewRef, jumpToLine } from './editor';
 import { PluginManager } from './plugins';
 import type { Command, RenderHooks } from './plugins';
@@ -79,16 +79,87 @@ function EditorPane({ doc, extra }: { doc: Doc; extra: Extension[] }) {
   return <div className="editor-host" ref={ref} />;
 }
 
-/* ===== 预览 ===== */
+/* ===== 预览（所见即所得：可直接编辑文字、拖入图片、拖动图片调整位置） ===== */
 function PreviewPane({ doc, hooks }: { doc: Doc; hooks: RenderHooks[] }) {
-  const html = useMemo(() => renderMarkdown(doc.content, hooks), [doc.content, hooks]);
+  const updateDoc = useStore((s) => s.updateDoc);
   const ref = useRef<HTMLDivElement>(null);
+  const skipRef = useRef(false);
+  const timerRef = useRef<number | null>(null);
+  const html = useMemo(() => renderMarkdown(doc.content, hooks), [doc.content, hooks]);
+
+  // 渲染来源变化时刷新预览；但若刚才是预览自身编辑同步回来的，跳过本次重绘（避免光标跳动）
   useEffect(() => {
-    previewElRef.current = ref.current;
-    if (ref.current) highlightCode(ref.current);
-    return () => { if (previewElRef.current === ref.current) previewElRef.current = null; };
+    const el = ref.current;
+    if (!el) return;
+    previewElRef.current = el;
+    if (skipRef.current) { skipRef.current = false; return; }
+    el.innerHTML = html;
+    highlightCode(el);
+    return () => { if (previewElRef.current === el) previewElRef.current = null; };
   }, [html]);
-  return <div className="preview markdown-body" ref={ref} dangerouslySetInnerHTML={{ __html: html }} />;
+
+  // 预览里的编辑 → 同步回 Markdown 源码
+  const syncFromPreview = () => {
+    const el = ref.current;
+    if (!el) return;
+    try {
+      const md = htmlToMarkdown(el.innerHTML);
+      if (md !== doc.content) {
+        skipRef.current = true;
+        updateDoc(doc.id, { content: md });
+      }
+    } catch (e) { /* ignore */ }
+  };
+
+  const onInput = () => {
+    if (timerRef.current != null) window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(syncFromPreview, 400);
+  };
+
+  const insertImageAtCaret = (dataUrl: string, name: string) => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    const safe = name.replace(/"/g, '');
+    document.execCommand('insertHTML', false, `<img src="${dataUrl}" alt="${safe}">`);
+    syncFromPreview();
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return; // 内部元素拖动（如图片换位）交给浏览器默认行为
+    e.preventDefault();
+    // 把光标定位到释放位置
+    try {
+      const docEl = document as any;
+      if (typeof docEl.caretRangeFromPoint === 'function') {
+        const range = docEl.caretRangeFromPoint(e.clientX, e.clientY) as Range | null;
+        if (range) { const sel = window.getSelection(); if (sel) { sel.removeAllRanges(); sel.addRange(range); } }
+      }
+    } catch { /* ignore */ }
+    for (const file of Array.from(files)) {
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = String(reader.result || '');
+          if (dataUrl) insertImageAtCaret(dataUrl, file.name);
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  };
+
+  return (
+    <div
+      className="preview markdown-body"
+      ref={ref}
+      contentEditable
+      suppressContentEditableWarning
+      onInput={onInput}
+      onDrop={onDrop}
+      onDragOver={(e) => { if (Array.from(e.dataTransfer?.types || []).includes('Files')) e.preventDefault(); }}
+    />
+  );
 }
 
 /* ===== 文档树 ===== */
