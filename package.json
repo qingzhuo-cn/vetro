@@ -1,7 +1,7 @@
 {
   "name": "vetro",
   "private": true,
-  "version": "2.3.0",
+  "version": "2.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -22,6 +22,7 @@
     "marked": "^18.0.9",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "turndown": "^7.2.0",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
@@ -29,6 +30,7 @@
     "@types/dompurify": "^3.0.5",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
+    "@types/turndown": "^5.0.6",
     "@vitejs/plugin-react": "^6.0.5",
     "typescript": "^7.0.2",
     "vite": "^8.2.1"
