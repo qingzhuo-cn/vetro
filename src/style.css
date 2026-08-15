@@ -128,7 +128,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
   width: 260px; flex-shrink: 0; display: flex; flex-direction: column;
   background: var(--glass-bg-lo); backdrop-filter: blur(24px);
   border-right: 1px solid var(--glass-border);
-  transition: width var(--dur) var(--ease);
+  transition: width 0.22s cubic-bezier(0.33, 1, 0.68, 1);
   overflow: hidden;
 }
 .sidebar.collapsed { width: 54px; }
@@ -163,6 +163,9 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 }
 .doc-item:hover { background: var(--glass-bg-hi); }
 .doc-item.active { background: var(--accent-soft); border-color: var(--accent-border); }
+.doc-item.drag-over { background: var(--accent-soft); border-color: var(--accent-border); box-shadow: inset 0 0 0 1px var(--accent-border); }
+.doc-item[draggable="true"] { cursor: grab; }
+.doc-item[draggable="true"]:active { cursor: grabbing; }
 .doc-ico { width: 26px; height: 26px; flex-shrink: 0; border-radius: 7px; display: grid; place-items: center; font-size: 11px; font-weight: 700; background: var(--glass-bg-hi); color: var(--fg-2); }
 .doc-meta { min-width: 0; flex: 1; }
 .doc-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

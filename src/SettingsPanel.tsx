@@ -1,8 +1,42 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from './store';
 import { ACCENTS, ICONS } from './presets';
 import { webdavList, webdavGet, webdavPut, encodePath } from './webdav';
+import { checkForUpdates } from './updater';
+import { getVersion } from './backend';
 import type { ThemeMode, SyncConfig } from './types';
+
+function UpdateSection() {
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState('');
+  const [current, setCurrent] = useState('');
+  useEffect(() => { getVersion().then(setCurrent).catch(() => {}); }, []);
+  const check = async () => {
+    setBusy(true); setStatus('');
+    try {
+      const info = await checkForUpdates();
+      if (info) {
+        setStatus(`发现新版本 ${info.latest}（当前 ${current || '?'}）。下载：${info.url}`);
+      } else {
+        setStatus(current ? `已是最新版本（v${current}）` : '未发现新版本');
+      }
+    } catch (e) {
+      setStatus('检查失败：' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="settings-group">
+      <h3>检查更新</h3>
+      <div className="settings-row">
+        <button className="btn ghost sm" onClick={check} disabled={busy}>{busy ? '检查中…' : '检查更新'}</button>
+        {current && <span className="fontsize-val">当前 v{current}</span>}
+      </div>
+      {status && <p className="sync-status">{status}</p>}
+    </section>
+  );
+}
 
 function SyncSection() {
   const cfg = useStore((s) => s.cfg);
@@ -150,6 +184,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
           </section>
 
           <SyncSection />
+          <UpdateSection />
         </div>
       </div>
     </div>

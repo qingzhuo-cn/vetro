@@ -15,6 +15,7 @@ import AiPanel from './AiPanel';
 import SettingsPanel from './SettingsPanel';
 import SearchPanel from './SearchPanel';
 import { HELP_DOC } from './help';
+import { checkForUpdates } from './updater';
 
 const STORAGE_KEY = 'vetro::v2';
 
@@ -98,17 +99,31 @@ function DocTree() {
   const createDoc = useStore((s) => s.createDoc);
   const deleteDoc = useStore((s) => s.deleteDoc);
   const setDocParent = useStore((s) => s.setDocParent);
+  const moveDoc = useStore((s) => s.moveDoc);
   const toggleDocSync = useStore((s) => s.toggleDocSync);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const nodes = useMemo(() => buildTree(docs, collapsed), [docs, collapsed]);
   const toggle = (id: string) => setCollapsed((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
-  if (!nodes.length) {
-    return <div className="doc-empty"><p>暂无文档</p><span>点击顶部「新建」开始</span></div>;
-  }
+  const handleDrop = (e: React.DragEvent, parentId: string | null) => {
+    e.preventDefault();
+    let src = '';
+    try { src = e.dataTransfer.getData('text/vetro-doc') || ''; } catch { /* ignore */ }
+    setDragOverId(null);
+    if (src) moveDoc(src, parentId);
+  };
+
   return (
-    <div className="doc-list">
+    <div
+      className="doc-list"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => handleDrop(e, null)}
+    >
+      {nodes.length === 0 && (
+        <div className="doc-empty"><p>暂无文档</p><span>点击顶部「新建」开始</span></div>
+      )}
       {nodes.map(({ doc, depth }) => {
         const hasKids = childrenOf(docs, doc.id).length > 0;
         const words = (doc.content || '').replace(/\s/g, '').length;
@@ -116,9 +131,24 @@ function DocTree() {
         return (
           <div
             key={doc.id}
-            className={'doc-item' + (doc.id === activeId ? ' active' : '')}
+            draggable
+            className={'doc-item' + (doc.id === activeId ? ' active' : '') + (dragOverId === doc.id ? ' drag-over' : '')}
             style={{ paddingLeft: 10 + depth * 16, '--i': 0 } as React.CSSProperties}
             onClick={() => setActive(doc.id)}
+            onDragStart={(e) => {
+              e.dataTransfer.setData('text/vetro-doc', doc.id);
+              e.dataTransfer.setData('text/plain', doc.id);
+              e.dataTransfer.effectAllowed = 'move';
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+              if (dragOverId !== doc.id) setDragOverId(doc.id);
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverId(null);
+            }}
+            onDrop={(e) => { e.stopPropagation(); handleDrop(e, doc.id); }}
           >
             {hasKids
               ? <button className="doc-caret" onClick={(e) => { e.stopPropagation(); toggle(doc.id); }}>{collapsed.has(doc.id) ? '▶' : '▼'}</button>
@@ -395,6 +425,16 @@ export default function App() {
     }, 500);
     return () => clearTimeout(t);
   }, [docs, activeId, cfg]);
+
+  // 自动检查更新（延迟几秒，静默；发现新版本才提示）
+  useEffect(() => {
+    const t = setTimeout(() => {
+      checkForUpdates().then((info) => {
+        if (info) toast(`发现新版本 ${info.latest}，可在「⚙ 设置 → 检查更新」查看下载地址`, 'ok');
+      });
+    }, 4000);
+    return () => clearTimeout(t);
+  }, []);
 
   const active = docs.find((d) => d.id === activeId) ?? null;
   const viewMode = cfg.viewMode;
