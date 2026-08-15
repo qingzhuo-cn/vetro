@@ -14,6 +14,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import AiPanel from './AiPanel';
 import SettingsPanel from './SettingsPanel';
 import SearchPanel from './SearchPanel';
+import { HELP_DOC } from './help';
 
 const STORAGE_KEY = 'vetro::v2';
 
@@ -231,7 +232,7 @@ function WindowControls() {
 }
 
 /* ===== 顶栏 ===== */
-function Topbar({ commands, onNew, onCycleView, onToggleSidebar, onOpenAi, onOpenSettings, onExport, onOpenSearch }: { commands: Command[]; onNew: () => void; onCycleView: () => void; onToggleSidebar: () => void; onOpenAi: () => void; onOpenSettings: () => void; onExport: () => void; onOpenSearch: () => void }) {
+function Topbar({ commands, onNew, onCycleView, onToggleSidebar, onOpenAi, onOpenSettings, onExport, onOpenSearch, onOpenHelp }: { commands: Command[]; onNew: () => void; onCycleView: () => void; onToggleSidebar: () => void; onOpenAi: () => void; onOpenSettings: () => void; onExport: () => void; onOpenSearch: () => void; onOpenHelp: () => void }) {
   const cfg = useStore((s) => s.cfg);
   const setCfg = useStore((s) => s.setCfg);
   const [openCmd, setOpenCmd] = useState(false);
@@ -254,6 +255,7 @@ function Topbar({ commands, onNew, onCycleView, onToggleSidebar, onOpenAi, onOpe
         <button className="btn ghost" onClick={onOpenSearch} title="搜索">🔍</button>
         <button className="btn ghost" onClick={() => setCfg({ theme: cfg.theme === 'dark' ? 'light' : 'dark' })}>{resolveTheme(cfg) === 'dark' ? '☀' : '🌙'}</button>
         <button className="btn ghost" onClick={onOpenSettings}>⚙ 设置</button>
+        <button className="btn ghost" onClick={onOpenHelp} title="使用说明">❓</button>
         <button className="btn ghost" onClick={() => setOpenCmd(!openCmd)}>⌘</button>
         <button className="btn primary" onClick={onOpenAi}>AI 助手</button>
       </div>
@@ -311,6 +313,7 @@ export default function App() {
   const sidebarTab = useStore((s) => s.sidebarTab);
   const setSidebarTab = useStore((s) => s.setSidebarTab);
   const setCfg = useStore((s) => s.setCfg);
+  const setActive = useStore((s) => s.setActive);
   const createDoc = useStore((s) => s.createDoc);
   const load = useStore((s) => s.load);
 
@@ -331,7 +334,15 @@ export default function App() {
         await dbInit();
         let raw = await dbLoadState();
         if (!raw) raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) load(JSON.parse(raw));
+        if (raw) {
+          load(JSON.parse(raw));
+        } else {
+          // 首次启动：内置「使用说明」文档
+          useStore.getState().createDoc('使用说明.md', HELP_DOC);
+        }
+        if (useStore.getState().docs.length === 0) {
+          useStore.getState().createDoc('使用说明.md', HELP_DOC);
+        }
       } catch (e) { /* ignore */ }
     })();
     applyTheme(useStore.getState().cfg);
@@ -408,24 +419,34 @@ export default function App() {
     }
   };
 
+  const openHelp = () => {
+    const s = useStore.getState();
+    const existing = s.docs.find((d) => d.name === '使用说明.md');
+    if (existing) setActive(existing.id);
+    else createDoc('使用说明.md', HELP_DOC);
+  };
+
   return (
     <div className="app">
       <div className="app-bg" aria-hidden>
         <div className="orb orb-1" /><div className="orb orb-2" /><div className="orb orb-3" />
       </div>
-      <Topbar commands={commands} onNew={() => createDoc()} onCycleView={cycleView} onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} onOpenAi={() => setAiOpen(true)} onOpenSettings={() => setSettingsOpen(true)} onExport={exportDoc} onOpenSearch={() => setSearchOpen(true)} />
+      <Topbar commands={commands} onNew={() => createDoc()} onCycleView={cycleView} onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} onOpenAi={() => setAiOpen(true)} onOpenSettings={() => setSettingsOpen(true)} onExport={exportDoc} onOpenSearch={() => setSearchOpen(true)} onOpenHelp={openHelp} />
       <div className="workbench">
         <aside className={'sidebar' + (sidebarCollapsed ? ' collapsed' : '')}>
           <div className="sidebar-head">
             <div className="sidebar-tabs">
               {(['docs', 'outline', 'trash'] as const).map((t) => (
-                <button key={t} className={'sidebar-tab' + (sidebarTab === t ? ' active' : '')} onClick={() => setSidebarTab(t)}>
-                  {t === 'docs' ? '文档' : t === 'outline' ? '大纲' : '回收站'}
+                <button key={t} className={'sidebar-tab' + (sidebarTab === t ? ' active' : '')}
+                  title={t === 'docs' ? '文档' : t === 'outline' ? '大纲' : '回收站'}
+                  onClick={() => { setSidebarTab(t); if (sidebarCollapsed) setSidebarCollapsed(false); }}>
+                  <span className="tab-ico">{t === 'docs' ? '📄' : t === 'outline' ? '☰' : '🗑'}</span>
+                  {!sidebarCollapsed && <span className="tab-label">{t === 'docs' ? '文档' : t === 'outline' ? '大纲' : '回收站'}</span>}
                 </button>
               ))}
             </div>
           </div>
-          {sidebarTab === 'docs' ? <DocTree /> : sidebarTab === 'outline' ? <OutlineList /> : <TrashList />}
+          {!sidebarCollapsed && (sidebarTab === 'docs' ? <DocTree /> : sidebarTab === 'outline' ? <OutlineList /> : <TrashList />)}
         </aside>
         <div className="editor-shell">
           <div className="view-tabs">
