@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
 /* ===== 版本 ===== */
@@ -143,6 +144,171 @@ async fn http_request(req: HttpRequest) -> Result<HttpResponse, String> {
     Ok(HttpResponse { status, headers, body })
 }
 
+/* ===== AI 流式输出（SSE 通过 Channel 推送给前端） ===== */
+
+#[tauri::command]
+async fn ai_stream(req: HttpRequest, on_chunk: tauri::ipc::Channel<String>) -> Result<(), String> {
+    use futures_util::StreamExt;
+    use reqwest::header::{HeaderName, HeaderValue};
+
+    let method = reqwest::Method::from_bytes(req.method.as_bytes())
+        .map_err(|e| format!("非法 HTTP 方法：{e}"))?;
+    let client = reqwest::Client::new();
+    let mut rb = client.request(method, &req.url);
+    for (k, v) in &req.headers {
+        if let (Ok(name), Ok(value)) = (
+            HeaderName::try_from(k.as_str()),
+            HeaderValue::try_from(v.as_str()),
+        ) {
+            rb = rb.header(name, value);
+        }
+    }
+    if let Some(body) = &req.body {
+        rb = rb.body(body.clone());
+    }
+
+    let res = rb.send().await.map_err(|e| e.to_string())?;
+    let status = res.status().as_u16();
+    if status >= 400 {
+        let body = res.text().await.map_err(|e| e.to_string())?;
+        let tail: String = body.chars().take(300).collect();
+        return Err(format!("HTTP {status}：{tail}"));
+    }
+
+    let mut stream = res.bytes_stream();
+    let mut buf = String::new();
+    let mut done = false;
+    while !done {
+        match stream.next().await {
+            Some(Ok(chunk)) => {
+                buf.push_str(&String::from_utf8_lossy(&chunk));
+                while let Some(idx) = buf.find('\n') {
+                    let line = buf[..idx].to_string();
+                    buf.drain(..=idx);
+                    let line = line.trim();
+                    if line.is_empty() {
+                        continue;
+                    }
+                    let Some(data) = line.strip_prefix("data:") else {
+                        continue;
+                    };
+                    let data = data.trim();
+                    if data == "[DONE]" {
+                        done = true;
+                        break;
+                    }
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
+                        let delta = v["choices"][0]["delta"]["content"].as_str().unwrap_or("");
+                        if !delta.is_empty() {
+                            let _ = on_chunk.send(delta.to_string());
+                        }
+                    }
+                }
+            }
+            Some(Err(e)) => return Err(e.to_string()),
+            None => break,
+        }
+    }
+    Ok(())
+}
+
+/* ===== SQLite 存储 + FTS5 全文搜索 ===== */
+
+#[derive(serde::Deserialize)]
+struct DocForIndex {
+    id: String,
+    name: String,
+    content: String,
+}
+
+#[derive(serde::Serialize)]
+struct SearchHit {
+    id: String,
+    name: String,
+    snippet: String,
+}
+
+fn open_db(app: &tauri::AppHandle) -> Result<rusqlite::Connection, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join("vetro.db");
+    rusqlite::Connection::open(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn db_init(app: tauri::AppHandle) -> Result<(), String> {
+    let conn = open_db(&app)?;
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+         CREATE VIRTUAL TABLE IF NOT EXISTS docs_fts USING fts5(id UNINDEXED, name, content);",
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn db_save(app: tauri::AppHandle, state_json: String, docs_json: String) -> Result<(), String> {
+    let mut conn = open_db(&app)?;
+    conn.execute(
+        "INSERT OR REPLACE INTO kv (key, value) VALUES ('state', ?1)",
+        rusqlite::params![state_json],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let docs: Vec<DocForIndex> = serde_json::from_str(&docs_json).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM docs_fts", []).map_err(|e| e.to_string())?;
+    {
+        let mut stmt = tx
+            .prepare("INSERT INTO docs_fts (id, name, content) VALUES (?1, ?2, ?3)")
+            .map_err(|e| e.to_string())?;
+        for d in &docs {
+            stmt.execute(rusqlite::params![d.id, d.name, d.content])
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn db_load(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let conn = open_db(&app)?;
+    let mut stmt = conn
+        .prepare("SELECT value FROM kv WHERE key = 'state'")
+        .map_err(|e| e.to_string())?;
+    let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
+    match rows.next().map_err(|e| e.to_string())? {
+        Some(row) => {
+            let value: String = row.get(0).map_err(|e| e.to_string())?;
+            Ok(Some(value))
+        }
+        None => Ok(None),
+    }
+}
+
+#[tauri::command]
+fn db_search(app: tauri::AppHandle, query: String) -> Result<Vec<SearchHit>, String> {
+    let q = query.trim().to_string();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+    // 转义引号并做短语搜索，中文按字符切分也能精确匹配连续串
+    let escaped = q.replace('"', "\"\"");
+    let fts_query = format!("\"{escaped}\"");
+    let conn = open_db(&app)?;
+    let sql = "SELECT id, name, snippet(docs_fts, 2, '[', ']', ' … ', 24) AS s \
+               FROM docs_fts WHERE docs_fts MATCH ?1 ORDER BY rank LIMIT 50";
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let mut rows = stmt.query(rusqlite::params![fts_query]).map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        let id: String = row.get(0).map_err(|e| e.to_string())?;
+        let name: String = row.get(1).map_err(|e| e.to_string())?;
+        let snippet: Option<String> = row.get(2).map_err(|e| e.to_string())?;
+        out.push(SearchHit { id, name, snippet: snippet.unwrap_or_default() });
+    }
+    Ok(out)
+}
+
 /* ===== 入口 ===== */
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -163,7 +329,12 @@ pub fn run() {
             write_text_file,
             open_file_dialog,
             save_file_dialog,
-            http_request
+            http_request,
+            ai_stream,
+            db_init,
+            db_save,
+            db_load,
+            db_search
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

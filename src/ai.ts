@@ -1,5 +1,6 @@
 // AI 请求封装（走 Tauri HTTP 代理，绕过 CORS；兼容 OpenAI/DeepSeek 等接口）。
-import { httpRequest } from './backend';
+import { invoke, Channel } from '@tauri-apps/api/core';
+import { httpRequest, isTauri } from './backend';
 import type { AiConfig } from './types';
 
 export interface ChatMessage {
@@ -50,4 +51,33 @@ export async function chatCompletion(cfg: AiConfig, messages: ChatMessage[]): Pr
   if (res.status >= 400) throw new Error(`HTTP ${res.status}：${res.body.slice(0, 300)}`);
   const data = JSON.parse(res.body);
   return data.choices?.[0]?.message?.content ?? '';
+}
+
+/** 流式对话补全：逐段回调 onDelta（Tauri 走 ai_stream Channel；浏览器回退为非流式）。 */
+export async function chatCompletionStream(
+  cfg: AiConfig,
+  messages: ChatMessage[],
+  onDelta: (text: string) => void,
+): Promise<void> {
+  const endpoint = normalizeEndpoint(cfg.endpoint);
+  if (!endpoint) throw new Error('请先填写接口地址');
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(cfg.key ? { Authorization: 'Bearer ' + cfg.key } : {}),
+  };
+  const body = JSON.stringify({ model: cfg.model || 'deepseek-chat', messages, stream: true });
+
+  if (isTauri) {
+    const channel = new Channel<string>();
+    channel.onmessage = (delta) => onDelta(delta);
+    await invoke('ai_stream', {
+      req: { url: endpoint + '/chat/completions', method: 'POST', headers, body, timeout_secs: 120 },
+      onChunk: channel,
+    });
+    return;
+  }
+
+  // 浏览器回退：非流式，一次性回调
+  const text = await chatCompletion(cfg, messages);
+  onDelta(text);
 }

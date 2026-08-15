@@ -9,10 +9,11 @@ import { defaultConfig } from './types';
 import type { Doc, AppConfig, ViewMode } from './types';
 import type { Extension } from '@codemirror/state';
 import { demoPlugin } from './demo-plugin';
-import { isTauri, getVersion, secureGet, secureSet, secureDelete, saveFileDialog, writeTextFile } from './backend';
+import { isTauri, getVersion, secureGet, secureSet, secureDelete, saveFileDialog, writeTextFile, dbInit, dbLoadState, dbSaveState, dbSearch } from './backend';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import AiPanel from './AiPanel';
 import SettingsPanel from './SettingsPanel';
+import SearchPanel from './SearchPanel';
 
 const STORAGE_KEY = 'vetro::v2';
 
@@ -230,7 +231,7 @@ function WindowControls() {
 }
 
 /* ===== 顶栏 ===== */
-function Topbar({ commands, onNew, onCycleView, onToggleSidebar, onOpenAi, onOpenSettings, onExport }: { commands: Command[]; onNew: () => void; onCycleView: () => void; onToggleSidebar: () => void; onOpenAi: () => void; onOpenSettings: () => void; onExport: () => void }) {
+function Topbar({ commands, onNew, onCycleView, onToggleSidebar, onOpenAi, onOpenSettings, onExport, onOpenSearch }: { commands: Command[]; onNew: () => void; onCycleView: () => void; onToggleSidebar: () => void; onOpenAi: () => void; onOpenSettings: () => void; onExport: () => void; onOpenSearch: () => void }) {
   const cfg = useStore((s) => s.cfg);
   const setCfg = useStore((s) => s.setCfg);
   const [openCmd, setOpenCmd] = useState(false);
@@ -250,6 +251,7 @@ function Topbar({ commands, onNew, onCycleView, onToggleSidebar, onOpenAi, onOpe
         <button className="btn ghost" onClick={onNew}>＋ 新建</button>
         <button className="btn ghost" onClick={onExport}>⭳ 导出</button>
         <button className="btn ghost" onClick={onCycleView}>视图</button>
+        <button className="btn ghost" onClick={onOpenSearch} title="搜索">🔍</button>
         <button className="btn ghost" onClick={() => setCfg({ theme: cfg.theme === 'dark' ? 'light' : 'dark' })}>{resolveTheme(cfg) === 'dark' ? '☀' : '🌙'}</button>
         <button className="btn ghost" onClick={onOpenSettings}>⚙ 设置</button>
         <button className="btn ghost" onClick={() => setOpenCmd(!openCmd)}>⌘</button>
@@ -319,21 +321,26 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const keyLoaded = useRef(false);
 
-  // 初始化：加载持久化 + 插件 + 主题
+  // 初始化：加载持久化（SQLite 优先，回退 localStorage 迁移旧数据）+ 插件 + 主题
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) load(JSON.parse(raw));
-    } catch (e) { /* ignore */ }
+    (async () => {
+      try {
+        await dbInit();
+        let raw = await dbLoadState();
+        if (!raw) raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) load(JSON.parse(raw));
+      } catch (e) { /* ignore */ }
+    })();
     applyTheme(useStore.getState().cfg);
     pm.activate(demoPlugin).then(() => {
       setCommands(pm.commands.all());
       setRenderHooks(pm.renderers.all());
       setEditorExts(pm.editors.all());
     });
-    // 从系统密钥链加载 AI 密钥（不落 localStorage）
+    // 从系统密钥链加载 AI 密钥（不落存储）
     secureGet('ai-key')
       .then((k) => {
         const cur = useStore.getState().cfg.ai.key;
@@ -365,13 +372,15 @@ export default function App() {
   // 主题变化
   useEffect(() => { applyTheme(cfg); }, [cfg]);
 
-  // 持久化（防抖）：密钥不落 localStorage，仅存系统密钥链
+  // 持久化（防抖）：SQLite（Tauri）或 localStorage（浏览器）；密钥只存系统钥匙串
   useEffect(() => {
     const t = setTimeout(() => {
       const s = useStore.getState();
       const { key: _key, ...aiSafe } = s.cfg.ai;
       const cfgSafe = { ...s.cfg, ai: aiSafe };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ docs: s.docs, trash: s.trash, activeId: s.activeId, cfg: cfgSafe }));
+      const stateJson = JSON.stringify({ docs: s.docs, trash: s.trash, activeId: s.activeId, cfg: cfgSafe });
+      const docsJson = JSON.stringify(s.docs.map((d) => ({ id: d.id, name: d.name, content: d.content })));
+      dbSaveState(stateJson, docsJson).catch(() => {});
     }, 500);
     return () => clearTimeout(t);
   }, [docs, activeId, cfg]);
@@ -404,7 +413,7 @@ export default function App() {
       <div className="app-bg" aria-hidden>
         <div className="orb orb-1" /><div className="orb orb-2" /><div className="orb orb-3" />
       </div>
-      <Topbar commands={commands} onNew={() => createDoc()} onCycleView={cycleView} onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} onOpenAi={() => setAiOpen(true)} onOpenSettings={() => setSettingsOpen(true)} onExport={exportDoc} />
+      <Topbar commands={commands} onNew={() => createDoc()} onCycleView={cycleView} onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} onOpenAi={() => setAiOpen(true)} onOpenSettings={() => setSettingsOpen(true)} onExport={exportDoc} onOpenSearch={() => setSearchOpen(true)} />
       <div className="workbench">
         <aside className={'sidebar' + (sidebarCollapsed ? ' collapsed' : '')}>
           <div className="sidebar-head">
@@ -439,6 +448,7 @@ export default function App() {
       <Toasts items={toasts} />
       {aiOpen && <AiPanel onClose={() => setAiOpen(false)} />}
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
+      {searchOpen && <SearchPanel onClose={() => setSearchOpen(false)} />}
     </div>
   );
 }

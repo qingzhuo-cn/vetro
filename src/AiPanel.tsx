@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from './store';
-import { fetchModels, chatCompletion } from './ai';
+import { fetchModels, chatCompletionStream } from './ai';
 import type { ChatMessage } from './ai';
 import type { AiConfig } from './types';
 
@@ -42,11 +42,27 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
     if (!text || busy) return;
     setInput('');
     const next: ChatMessage[] = [...messages, { role: 'user', content: text }];
-    setMessages(next);
+    setMessages([...next, { role: 'assistant', content: '' }]);
     setBusy(true);
     try {
-      const reply = await chatCompletion(ai, next);
-      setMessages((m) => [...m, { role: 'assistant', content: reply || '(空回复)' }]);
+      await chatCompletionStream(ai, next, (delta) => {
+        setMessages((m) => {
+          const copy = [...m];
+          const last = copy[copy.length - 1];
+          if (last && last.role === 'assistant') {
+            copy[copy.length - 1] = { ...last, content: last.content + delta };
+          }
+          return copy;
+        });
+      });
+      setMessages((m) => {
+        const copy = [...m];
+        const last = copy[copy.length - 1];
+        if (last && last.role === 'assistant' && !last.content) {
+          copy[copy.length - 1] = { ...last, content: '(空回复)' };
+        }
+        return copy;
+      });
       set({ ok: true });
     } catch (e) {
       setMessages((m) => [...m, { role: 'assistant', content: '请求失败：' + (e instanceof Error ? e.message : String(e)) }]);

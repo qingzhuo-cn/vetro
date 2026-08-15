@@ -93,3 +93,37 @@ export async function httpRequest(req: HttpRequest): Promise<HttpResponse> {
   });
   return { status: res.status, headers, body: await res.text() };
 }
+
+/* ===== SQLite 存储 + 全文搜索 ===== */
+
+export interface SearchHit {
+  id: string;
+  name: string;
+  snippet: string;
+}
+
+const STORAGE_KEY = 'vetro::v2';
+
+export async function dbInit(): Promise<void> {
+  if (isTauri) {
+    await invoke('db_init');
+  }
+}
+
+export async function dbLoadState(): Promise<string | null> {
+  if (isTauri) return invoke<string | null>('db_load');
+  return localStorage.getItem(STORAGE_KEY);
+}
+
+export async function dbSaveState(stateJson: string, docsJson: string): Promise<void> {
+  if (isTauri) {
+    await invoke('db_save', { stateJson, docsJson });
+    return;
+  }
+  localStorage.setItem(STORAGE_KEY, stateJson);
+}
+
+export async function dbSearch(query: string): Promise<SearchHit[]> {
+  if (isTauri) return invoke<SearchHit[]>('db_search', { query });
+  return [];
+}

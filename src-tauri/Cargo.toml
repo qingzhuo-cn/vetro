@@ -1,6 +1,6 @@
 [package]
 name = "vetro"
-version = "2.0.0"
+version = "2.1.0"
 description = "Vetro — 玻璃拟态 Markdown 编辑器"
 authors = ["qingzhuo-cn"]
 license = "MIT"
@@ -23,7 +23,9 @@ tauri = { version = "2", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 keyring = "3"
-reqwest = "0.12"
+reqwest = { version = "0.12", features = ["stream"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+futures-util = "0.3"
 
 # 体积优化：更小、更快的发布二进制
 [profile.release]
