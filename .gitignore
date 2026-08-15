@@ -5,6 +5,7 @@ src-tauri/target/
 src-tauri/gen/
 *.log
 *.tsbuildinfo
+release-log.txt
 .DS_Store
 Thumbs.db
 
