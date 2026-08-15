@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useStore, buildTree, docTreeContent, childrenOf } from './store';
 import { renderMarkdown, highlightCode, previewElRef, htmlToMarkdown } from './markdown';
 import { createEditor, editorViewRef, jumpToLine } from './editor';
@@ -79,12 +80,15 @@ function EditorPane({ doc, extra }: { doc: Doc; extra: Extension[] }) {
   return <div className="editor-host" ref={ref} />;
 }
 
-/* ===== 预览（所见即所得：可直接编辑文字、拖入图片、拖动图片调整位置） ===== */
+/* ===== 预览（所见即所得：可编辑文字、拖入图片、拖图移动、右键复制/移动/删除） ===== */
 function PreviewPane({ doc, hooks }: { doc: Doc; hooks: RenderHooks[] }) {
   const updateDoc = useStore((s) => s.updateDoc);
   const ref = useRef<HTMLDivElement>(null);
   const skipRef = useRef(false);
   const timerRef = useRef<number | null>(null);
+  const dragImgRef = useRef<HTMLImageElement | null>(null);
+  const pendingMoveRef = useRef<HTMLImageElement | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; img: HTMLImageElement } | null>(null);
   const html = useMemo(() => renderMarkdown(doc.content, hooks), [doc.content, hooks]);
 
   // 渲染来源变化时刷新预览；但若刚才是预览自身编辑同步回来的，跳过本次重绘（避免光标跳动）
@@ -97,6 +101,14 @@ function PreviewPane({ doc, hooks }: { doc: Doc; hooks: RenderHooks[] }) {
     highlightCode(el);
     return () => { if (previewElRef.current === el) previewElRef.current = null; };
   }, [html]);
+
+  // 点击其它位置关闭右键菜单
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, [ctxMenu]);
 
   // 预览里的编辑 → 同步回 Markdown 源码
   const syncFromPreview = () => {
@@ -116,49 +128,155 @@ function PreviewPane({ doc, hooks }: { doc: Doc; hooks: RenderHooks[] }) {
     timerRef.current = window.setTimeout(syncFromPreview, 400);
   };
 
-  const insertImageAtCaret = (dataUrl: string, name: string) => {
-    const el = ref.current;
-    if (!el) return;
-    el.focus();
-    const safe = name.replace(/"/g, '');
-    document.execCommand('insertHTML', false, `<img src="${dataUrl}" alt="${safe}">`);
-    syncFromPreview();
+  // 在坐标处插入节点（优先用 caretRangeFromPoint）
+  const placeNodeAt = (x: number, y: number, node: Node): boolean => {
+    try {
+      const docEl = document as any;
+      if (typeof docEl.caretRangeFromPoint === 'function') {
+        const range = docEl.caretRangeFromPoint(x, y) as Range | null;
+        if (range) {
+          range.deleteContents();
+          range.insertNode(node);
+          range.setStartAfter(node);
+          range.setEndAfter(node);
+          const sel = window.getSelection();
+          if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+          return true;
+        }
+      }
+    } catch { /* ignore */ }
+    ref.current?.appendChild(node);
+    return true;
+  };
+
+  const insertFileImage = (e: React.DragEvent, file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      if (!dataUrl) return;
+      const img = document.createElement('img');
+      img.src = dataUrl;
+      img.alt = file.name.replace(/\.[^.]+$/, '');
+      placeNodeAt(e.clientX, e.clientY, img);
+      syncFromPreview();
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // 图片拖拽：移动（剪切到目标位置，不复制）
+  const onDragStart = (e: React.DragEvent) => {
+    const t = e.target as HTMLElement;
+    if (t.tagName === 'IMG') {
+      dragImgRef.current = t as HTMLImageElement;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/vetro-img', '1');
+    } else {
+      dragImgRef.current = null;
+    }
+  };
+
+  const onDragOver = (e: React.DragEvent) => {
+    const types = Array.from(e.dataTransfer?.types || []);
+    if (types.includes('Files')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      return;
+    }
+    if (dragImgRef.current) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    }
   };
 
   const onDrop = (e: React.DragEvent) => {
     const files = e.dataTransfer?.files;
-    if (!files || files.length === 0) return; // 内部元素拖动（如图片换位）交给浏览器默认行为
-    e.preventDefault();
-    // 把光标定位到释放位置
-    try {
-      const docEl = document as any;
-      if (typeof docEl.caretRangeFromPoint === 'function') {
-        const range = docEl.caretRangeFromPoint(e.clientX, e.clientY) as Range | null;
-        if (range) { const sel = window.getSelection(); if (sel) { sel.removeAllRanges(); sel.addRange(range); } }
+    if (files && files.length) {
+      e.preventDefault();
+      for (const file of Array.from(files)) {
+        if (file.type.startsWith('image/')) insertFileImage(e, file);
       }
-    } catch { /* ignore */ }
-    for (const file of Array.from(files)) {
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = String(reader.result || '');
-          if (dataUrl) insertImageAtCaret(dataUrl, file.name);
-        };
-        reader.readAsDataURL(file);
-      }
+      dragImgRef.current = null;
+      return;
+    }
+    const src = dragImgRef.current;
+    if (src) {
+      e.preventDefault();
+      const clone = src.cloneNode(true) as HTMLImageElement;
+      src.remove();
+      placeNodeAt(e.clientX, e.clientY, clone);
+      dragImgRef.current = null;
+      syncFromPreview();
     }
   };
 
+  const onDragEnd = () => { dragImgRef.current = null; };
+
+  const onContextMenu = (e: React.MouseEvent) => {
+    const t = e.target as HTMLElement;
+    if (t.tagName === 'IMG') {
+      e.preventDefault();
+      setCtxMenu({ x: e.clientX, y: e.clientY, img: t as HTMLImageElement });
+    } else {
+      setCtxMenu(null);
+    }
+  };
+
+  const onClickPlace = (e: React.MouseEvent) => {
+    const pending = pendingMoveRef.current;
+    if (!pending) return;
+    pendingMoveRef.current = null;
+    placeNodeAt(e.clientX, e.clientY, pending);
+    syncFromPreview();
+  };
+
+  const dupImage = () => {
+    if (!ctxMenu) return;
+    const clone = ctxMenu.img.cloneNode(true) as HTMLImageElement;
+    ctxMenu.img.after(clone);
+    setCtxMenu(null);
+    syncFromPreview();
+  };
+
+  const cutImage = () => {
+    if (!ctxMenu) return;
+    pendingMoveRef.current = ctxMenu.img.cloneNode(true) as HTMLImageElement;
+    ctxMenu.img.remove();
+    setCtxMenu(null);
+    syncFromPreview();
+    toast('已剪切图片，点击预览目标位置即可放置', 'ok');
+  };
+
+  const delImage = () => {
+    if (!ctxMenu) return;
+    ctxMenu.img.remove();
+    setCtxMenu(null);
+    syncFromPreview();
+  };
+
   return (
-    <div
-      className="preview markdown-body"
-      ref={ref}
-      contentEditable
-      suppressContentEditableWarning
-      onInput={onInput}
-      onDrop={onDrop}
-      onDragOver={(e) => { if (Array.from(e.dataTransfer?.types || []).includes('Files')) e.preventDefault(); }}
-    />
+    <>
+      <div
+        className="preview markdown-body"
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={onInput}
+        onClick={onClickPlace}
+        onDragStart={onDragStart}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+        onDragEnd={onDragEnd}
+        onContextMenu={onContextMenu}
+      />
+      {ctxMenu && createPortal(
+        <div className="img-menu" style={{ left: ctxMenu.x, top: ctxMenu.y }} onClick={(e) => e.stopPropagation()}>
+          <button onClick={dupImage}>复制一份</button>
+          <button onClick={cutImage}>移动</button>
+          <button onClick={delImage}>删除</button>
+        </div>,
+        document.body
+      )}
+    </>
   );
 }
 
