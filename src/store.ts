@@ -28,6 +28,7 @@ interface VetroState {
   restoreTrash(id: string): void;
   purgeTrash(id: string): void;
   setDocParent(id: string, parentId: string | null): void;
+  moveDoc(id: string, parentId: string | null): void;
   toggleDocSync(id: string): void;
 }
 
@@ -89,6 +90,24 @@ export const useStore = create<VetroState>((set) => ({
   purgeTrash(id) { set((s) => ({ trash: s.trash.filter((x) => x.id !== id) })); },
   setDocParent(id, parentId) {
     set((s) => ({ docs: s.docs.map((d) => (d.id === id ? { ...d, parentId } : d)) }));
+  },
+  moveDoc(id, parentId) {
+    set((s) => {
+      const doc = s.docs.find((d) => d.id === id);
+      if (!doc) return s;
+      // 防止环：新父级不能是自身或其子孙
+      if (parentId) {
+        let cur = s.docs.find((d) => d.id === parentId);
+        while (cur) {
+          if (cur.id === id) return s;
+          const nextId = cur.parentId;
+          cur = nextId ? s.docs.find((d) => d.id === nextId) : undefined;
+        }
+      }
+      const others = s.docs.filter((d) => d.id !== id);
+      const moved = { ...doc, parentId };
+      return { docs: [...others, moved], activeId: id };
+    });
   },
   toggleDocSync(id) {
     set((s) => ({ docs: s.docs.map((d) => (d.id === id ? { ...d, sync: d.sync !== false } : d)) }));

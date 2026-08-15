@@ -8,6 +8,24 @@ import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/sea
 /* 当前激活的编辑器实例（供大纲跳转等使用） */
 export const editorViewRef: { current: EditorView | null } = { current: null };
 
+/* 在光标处插入一张 base64 图片的 Markdown */
+function insertImageDataUrl(view: EditorView, dataUrl: string, name = '图片') {
+  const md = `![${name}](${dataUrl})`;
+  const { from, to } = view.state.selection.main;
+  view.dispatch({ changes: { from, to, insert: md }, selection: { anchor: from + md.length } });
+}
+
+/* 读取图片文件 → 插入 */
+function insertImageFile(view: EditorView, file: File) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = String(reader.result || '');
+    if (!dataUrl) return;
+    insertImageDataUrl(view, dataUrl, file.name.replace(/\.[^.]+$/, '') || '图片');
+  };
+  reader.readAsDataURL(file);
+}
+
 /* 粘贴图片 → 插入 base64 Markdown */
 function imagePasteHandler(event: Event, view: EditorView): boolean {
   const ce = event as ClipboardEvent;
@@ -18,20 +36,40 @@ function imagePasteHandler(event: Event, view: EditorView): boolean {
     if (item.kind === 'file' && item.type.startsWith('image/')) {
       const file = item.getAsFile();
       if (!file) continue;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = String(reader.result || '');
-        if (!dataUrl) return;
-        const md = `![图片](${dataUrl})`;
-        const { from, to } = view.state.selection.main;
-        view.dispatch({ changes: { from, to, insert: md }, selection: { anchor: from + md.length } });
-      };
-      reader.readAsDataURL(file);
+      insertImageFile(view, file);
       ce.preventDefault();
       return true;
     }
   }
   return false;
+}
+
+/* 拖拽图片文件进入编辑器 → 允许放下 */
+function imageDragOverHandler(event: Event): boolean {
+  const de = event as DragEvent;
+  const types = de.dataTransfer?.types;
+  if (types && Array.from(types).some((t) => t === 'Files')) {
+    de.preventDefault();
+    de.dataTransfer!.dropEffect = 'copy';
+    return true;
+  }
+  return false;
+}
+
+/* 放下图片文件 → 插入 */
+function imageDropHandler(event: Event, view: EditorView): boolean {
+  const de = event as DragEvent;
+  const files = de.dataTransfer?.files;
+  if (!files || files.length === 0) return false;
+  let inserted = false;
+  for (const file of Array.from(files)) {
+    if (file.type.startsWith('image/')) {
+      insertImageFile(view, file);
+      inserted = true;
+    }
+  }
+  if (inserted) de.preventDefault();
+  return inserted;
 }
 
 export function createEditor(parent: HTMLElement, doc: string, onChange: (value: string) => void, extra: Extension[] = []): EditorView {
@@ -45,7 +83,11 @@ export function createEditor(parent: HTMLElement, doc: string, onChange: (value:
       syntaxHighlighting(defaultHighlightStyle),
       highlightSelectionMatches(),
       search({ top: true }),
-      EditorView.domEventHandlers({ paste: imagePasteHandler }),
+      EditorView.domEventHandlers({
+        paste: imagePasteHandler,
+        dragover: imageDragOverHandler,
+        drop: imageDropHandler
+      }),
       keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
       EditorView.lineWrapping,
       EditorView.updateListener.of((u) => {
