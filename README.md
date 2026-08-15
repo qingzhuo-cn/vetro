@@ -76,7 +76,11 @@
 
 [![Download](https://img.shields.io/badge/⬇-下载最新版-4ecdc4?style=for-the-badge)](https://github.com/qingzhuo-cn/vetro/releases/latest)
 
-`Vetro-x.x.x_x64-setup.exe`（推荐） · `Vetro-x.x.x_x64_en-US.msi`
+`Vetro-x.x.x_x64-setup.exe`（Windows 推荐） · `Vetro-x.x.x_x64_en-US.msi`
+
+Linux：`vetro_x.x.x_amd64.deb`（Debian/Ubuntu） · `Vetro_x.x.x_x86_64.AppImage`
+
+> Linux 包由 GitHub Actions 自动构建（见 [build-linux.yml](.github/workflows/build-linux.yml)）。鸿蒙版方案见 [HARMONYOS-PORT.md](HARMONYOS-PORT.md)。
 
 </div>
 
@@ -87,8 +91,13 @@
 **环境要求**
 
 - [Node.js](https://nodejs.org) ≥ 18
-- [Rust](https://rustup.rs)（stable，MSVC 工具链）
+- [Rust](https://rustup.rs)（stable）
 - Windows：Visual Studio 2022 **Build Tools**（勾选「使用 C++ 的桌面开发」）+ Windows SDK
+- Linux（Debian/Ubuntu）：WebKitGTK 等系统依赖
+  ```bash
+  sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
+    libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+  ```
 
 ```bash
 npm install          # 安装前端依赖
