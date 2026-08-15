@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore, buildTree, docTreeContent, childrenOf } from './store';
-import { renderMarkdown, highlightCode } from './markdown';
-import { createEditor } from './editor';
+import { renderMarkdown, highlightCode, previewElRef } from './markdown';
+import { createEditor, editorViewRef, jumpToLine } from './editor';
 import { PluginManager } from './plugins';
 import type { Command, RenderHooks } from './plugins';
 import { ACCENTS, ICONS, rgba, lighten, darken } from './presets';
@@ -9,6 +9,10 @@ import { defaultConfig } from './types';
 import type { Doc, AppConfig, ViewMode } from './types';
 import type { Extension } from '@codemirror/state';
 import { demoPlugin } from './demo-plugin';
+import { isTauri, getVersion, secureGet, secureSet, secureDelete, saveFileDialog, writeTextFile } from './backend';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import AiPanel from './AiPanel';
+import SettingsPanel from './SettingsPanel';
 
 const STORAGE_KEY = 'vetro::v2';
 
@@ -65,7 +69,8 @@ function EditorPane({ doc, extra }: { doc: Doc; extra: Extension[] }) {
   useEffect(() => {
     if (!ref.current) return;
     const view = createEditor(ref.current, doc.content, (v) => updateDoc(doc.id, { content: v }), extra);
-    return () => view.destroy();
+    editorViewRef.current = view;
+    return () => { if (editorViewRef.current === view) editorViewRef.current = null; view.destroy(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.id]);
   return <div className="editor-host" ref={ref} />;
@@ -75,7 +80,11 @@ function EditorPane({ doc, extra }: { doc: Doc; extra: Extension[] }) {
 function PreviewPane({ doc, hooks }: { doc: Doc; hooks: RenderHooks[] }) {
   const html = useMemo(() => renderMarkdown(doc.content, hooks), [doc.content, hooks]);
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (ref.current) highlightCode(ref.current); }, [html]);
+  useEffect(() => {
+    previewElRef.current = ref.current;
+    if (ref.current) highlightCode(ref.current);
+    return () => { if (previewElRef.current === ref.current) previewElRef.current = null; };
+  }, [html]);
   return <div className="preview markdown-body" ref={ref} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
@@ -148,23 +157,103 @@ function TrashList() {
   );
 }
 
+/* ===== 大纲 ===== */
+function extractHeadings(content: string): { level: number; text: string; line: number }[] {
+  const out: { level: number; text: string; line: number }[] = [];
+  const lines = content.split('\n');
+  let inFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    if (/^\s*(```|~~~)/.test(raw)) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    const m = /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(raw);
+    if (m) {
+      const text = m[2].replace(/[*_`~]/g, '').trim();
+      if (text) out.push({ level: m[1].length, text, line: i + 1 });
+    }
+  }
+  return out;
+}
+
+function OutlineList() {
+  const docs = useStore((s) => s.docs);
+  const activeId = useStore((s) => s.activeId);
+  const d = docs.find((x) => x.id === activeId);
+  const headings = useMemo(() => extractHeadings(d?.content || ''), [d?.content]);
+  if (!headings.length) {
+    return <div className="doc-empty"><p>暂无标题</p><span>用 # 标题来组织文档结构</span></div>;
+  }
+  const jump = (line: number, index: number) => {
+    jumpToLine(line);
+    const el = previewElRef.current;
+    if (el) {
+      const hs = el.querySelectorAll('h1,h2,h3,h4,h5,h6');
+      hs[index]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+  return (
+    <div className="outline-list">
+      {headings.map((h, i) => (
+        <button key={i} className="outline-item" style={{ paddingLeft: 10 + (h.level - 1) * 14 }}
+          onClick={() => jump(h.line, i)}>
+          <span className="outline-level">H{h.level}</span>
+          <span className="outline-text">{h.text}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ===== 窗口控制（无边框标题栏） ===== */
+function WindowControls() {
+  const [max, setMax] = useState(false);
+  useEffect(() => {
+    if (!isTauri) return;
+    const w = getCurrentWindow();
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    w.isMaximized().then((m) => { if (!disposed) setMax(m); });
+    w.onResized(async () => setMax(await w.isMaximized())).then((fn) => {
+      if (disposed) fn();
+      else unlisten = fn;
+    });
+    return () => { disposed = true; unlisten?.(); };
+  }, []);
+  const w = () => (isTauri ? getCurrentWindow() : null);
+  return (
+    <>
+      <button className="winbtn" title="最小化" onClick={() => w()?.minimize()}>─</button>
+      <button className="winbtn" title={max ? '还原' : '最大化'} onClick={() => w()?.toggleMaximize()}>{max ? '❐' : '□'}</button>
+      <button className="winbtn winbtn-close" title="关闭" onClick={() => w()?.close()}>✕</button>
+    </>
+  );
+}
+
 /* ===== 顶栏 ===== */
-function Topbar({ commands, onNew, onCycleView, onToggleSidebar }: { commands: Command[]; onNew: () => void; onCycleView: () => void; onToggleSidebar: () => void }) {
+function Topbar({ commands, onNew, onCycleView, onToggleSidebar, onOpenAi, onOpenSettings, onExport }: { commands: Command[]; onNew: () => void; onCycleView: () => void; onToggleSidebar: () => void; onOpenAi: () => void; onOpenSettings: () => void; onExport: () => void }) {
   const cfg = useStore((s) => s.cfg);
   const setCfg = useStore((s) => s.setCfg);
   const [openCmd, setOpenCmd] = useState(false);
+  const onDragMouseDown = (e: React.MouseEvent) => {
+    if (!isTauri || e.button !== 0) return;
+    const t = e.target as HTMLElement;
+    if (t.closest('button, input, textarea, select, a, .cmd-menu')) return;
+    getCurrentWindow().startDragging();
+  };
   return (
-    <header className="topbar">
+    <header className="topbar" onMouseDown={onDragMouseDown}>
       <div className="brand">
         <BrandLogo iconId={cfg.icon} />
         <div className="brand-text"><span className="brand-name">Vetro</span></div>
       </div>
       <div className="topbar-actions">
         <button className="btn ghost" onClick={onNew}>＋ 新建</button>
+        <button className="btn ghost" onClick={onExport}>⭳ 导出</button>
         <button className="btn ghost" onClick={onCycleView}>视图</button>
         <button className="btn ghost" onClick={() => setCfg({ theme: cfg.theme === 'dark' ? 'light' : 'dark' })}>{resolveTheme(cfg) === 'dark' ? '☀' : '🌙'}</button>
+        <button className="btn ghost" onClick={onOpenSettings}>⚙ 设置</button>
         <button className="btn ghost" onClick={() => setOpenCmd(!openCmd)}>⌘</button>
-        <button className="btn primary">AI 助手</button>
+        <button className="btn primary" onClick={onOpenAi}>AI 助手</button>
       </div>
       {openCmd && (
         <div className="cmd-menu">
@@ -176,6 +265,7 @@ function Topbar({ commands, onNew, onCycleView, onToggleSidebar }: { commands: C
       )}
       <div className="win-controls">
         <button className="winbtn" title="收起侧栏" onClick={onToggleSidebar}>≡</button>
+        <WindowControls />
       </div>
     </header>
   );
@@ -188,6 +278,8 @@ function StatusBar() {
   const docs = useStore((s) => s.docs);
   const d = docs.find((x) => x.id === activeId);
   const words = d ? (d.content || '').replace(/\s/g, '').length : 0;
+  const [ver, setVer] = useState('');
+  useEffect(() => { getVersion().then(setVer).catch(() => {}); }, []);
   return (
     <footer className="statusbar">
       <span className="save-state">自动保存</span>
@@ -195,6 +287,7 @@ function StatusBar() {
       <span>{words} 字</span>
       <span className="spacer" />
       <span className="accent-label">{ACCENTS.find((a) => a.id === cfg.accent)?.name ?? ''}</span>
+      {ver && <span className="version-label">v{ver}</span>}
     </footer>
   );
 }
@@ -224,6 +317,9 @@ export default function App() {
   const [editorExts, setEditorExts] = useState<Extension[]>([]);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const keyLoaded = useRef(false);
 
   // 初始化：加载持久化 + 插件 + 主题
   useEffect(() => {
@@ -237,8 +333,24 @@ export default function App() {
       setRenderHooks(pm.renderers.all());
       setEditorExts(pm.editors.all());
     });
+    // 从系统密钥链加载 AI 密钥（不落 localStorage）
+    secureGet('ai-key')
+      .then((k) => {
+        const cur = useStore.getState().cfg.ai.key;
+        if (k && !cur) setCfg({ ai: { ...useStore.getState().cfg.ai, key: k } });
+      })
+      .catch(() => {})
+      .finally(() => { keyLoaded.current = true; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // AI 密钥变化 → 写入系统密钥链
+  useEffect(() => {
+    if (!keyLoaded.current) return;
+    const key = cfg.ai.key;
+    if (key) secureSet('ai-key', key).catch(() => {});
+    else secureDelete('ai-key').catch(() => {});
+  }, [cfg.ai.key]);
 
   // toast 注入
   useEffect(() => {
@@ -253,11 +365,13 @@ export default function App() {
   // 主题变化
   useEffect(() => { applyTheme(cfg); }, [cfg]);
 
-  // 持久化（防抖）
+  // 持久化（防抖）：密钥不落 localStorage，仅存系统密钥链
   useEffect(() => {
     const t = setTimeout(() => {
       const s = useStore.getState();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ docs: s.docs, trash: s.trash, activeId: s.activeId, cfg: s.cfg }));
+      const { key: _key, ...aiSafe } = s.cfg.ai;
+      const cfgSafe = { ...s.cfg, ai: aiSafe };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ docs: s.docs, trash: s.trash, activeId: s.activeId, cfg: cfgSafe }));
     }, 500);
     return () => clearTimeout(t);
   }, [docs, activeId, cfg]);
@@ -271,24 +385,38 @@ export default function App() {
     setCfg({ viewMode: order[(i + 1) % order.length] });
   };
 
+  const exportDoc = async () => {
+    const d = docs.find((x) => x.id === activeId);
+    if (!d) { toast('没有可导出的文档', 'err'); return; }
+    const merged = docTreeContent(docs, d);
+    const path = await saveFileDialog(d.name.replace(/\.(md|markdown|txt)$/i, '') + ' (导出).md');
+    if (!path) return;
+    try {
+      await writeTextFile(path, merged);
+      toast('已导出到 ' + path, 'ok');
+    } catch (e) {
+      toast('导出失败：' + (e instanceof Error ? e.message : String(e)), 'err');
+    }
+  };
+
   return (
     <div className="app">
       <div className="app-bg" aria-hidden>
         <div className="orb orb-1" /><div className="orb orb-2" /><div className="orb orb-3" />
       </div>
-      <Topbar commands={commands} onNew={() => createDoc()} onCycleView={cycleView} onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} />
+      <Topbar commands={commands} onNew={() => createDoc()} onCycleView={cycleView} onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} onOpenAi={() => setAiOpen(true)} onOpenSettings={() => setSettingsOpen(true)} onExport={exportDoc} />
       <div className="workbench">
         <aside className={'sidebar' + (sidebarCollapsed ? ' collapsed' : '')}>
           <div className="sidebar-head">
             <div className="sidebar-tabs">
-              {(['docs', 'trash'] as const).map((t) => (
+              {(['docs', 'outline', 'trash'] as const).map((t) => (
                 <button key={t} className={'sidebar-tab' + (sidebarTab === t ? ' active' : '')} onClick={() => setSidebarTab(t)}>
-                  {t === 'docs' ? '文档' : '回收站'}
+                  {t === 'docs' ? '文档' : t === 'outline' ? '大纲' : '回收站'}
                 </button>
               ))}
             </div>
           </div>
-          {sidebarTab === 'docs' ? <DocTree /> : <TrashList />}
+          {sidebarTab === 'docs' ? <DocTree /> : sidebarTab === 'outline' ? <OutlineList /> : <TrashList />}
         </aside>
         <div className="editor-shell">
           <div className="view-tabs">
@@ -309,6 +437,8 @@ export default function App() {
       </div>
       <StatusBar />
       <Toasts items={toasts} />
+      {aiOpen && <AiPanel onClose={() => setAiOpen(false)} />}
+      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }

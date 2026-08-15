@@ -1,0 +1,34 @@
+[package]
+name = "vetro"
+version = "2.0.0"
+description = "Vetro — 玻璃拟态 Markdown 编辑器"
+authors = ["qingzhuo-cn"]
+license = "MIT"
+repository = "https://github.com/qingzhuo-cn/vetro"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "vetro_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2", features = [] }
+tauri-plugin-log = "2"
+tauri-plugin-dialog = "2"
+keyring = "3"
+reqwest = "0.12"
+
+# 体积优化：更小、更快的发布二进制
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
+panic = "abort"

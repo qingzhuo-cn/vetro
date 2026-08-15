@@ -4,5 +4,12 @@ dist/
 src-tauri/target/
 src-tauri/gen/
 *.log
+*.tsbuildinfo
 .DS_Store
 Thumbs.db
+
+# 本机环境安装脚本（不入库）
+install-msvc.bat
+install-pwsh.bat
+try-msvc.bat
+src-tauri/build.bat

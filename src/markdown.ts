@@ -5,6 +5,9 @@ import type { RenderHooks } from './plugins';
 
 marked.setOptions({ breaks: true, gfm: true });
 
+/* 当前预览容器（供大纲滚动定位） */
+export const previewElRef: { current: HTMLElement | null } = { current: null };
+
 export function renderMarkdown(md: string, hooks: RenderHooks[] = []): string {
   let html: string;
   try {
