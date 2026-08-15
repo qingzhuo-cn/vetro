@@ -1,0 +1,3 @@
+== build ==
+ERR setTimeout is not available in the dynamic package sandbox — Node timers are unavailable. Use the cordis timer service instead: declare inject: ['timer'] on your plugin and call ctx.timeout / ctx.interval after querying Host Service.listService for the exact overloads. Those calls are fiber effects, cleaned up automatically when stopped.
+BUILD FAILED, stop
