@@ -198,9 +198,15 @@ async fn ai_stream(req: HttpRequest, on_chunk: tauri::ipc::Channel<String>) -> R
                         break;
                     }
                     if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
-                        let delta = v["choices"][0]["delta"]["content"].as_str().unwrap_or("");
-                        if !delta.is_empty() {
-                            let _ = on_chunk.send(delta.to_string());
+                        let delta = &v["choices"][0]["delta"];
+                        let reasoning = delta["reasoning_content"].as_str().unwrap_or("");
+                        let content = delta["content"].as_str().unwrap_or("");
+                        // reasoner 模型的思考内容先流式输出，再接正式回答
+                        if !reasoning.is_empty() {
+                            let _ = on_chunk.send(format!("🧠 {reasoning}"));
+                        }
+                        if !content.is_empty() {
+                            let _ = on_chunk.send(content.to_string());
                         }
                     }
                 }

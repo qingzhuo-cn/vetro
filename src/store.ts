@@ -129,8 +129,11 @@ export interface TreeNode { doc: Doc; depth: number; }
 
 export function buildTree(docs: Doc[], collapsed: Set<string>): TreeNode[] {
   const out: TreeNode[] = [];
+  const visited = new Set<string>();
   const walk = (parentId: string | null, depth: number) => {
     for (const d of childrenOf(docs, parentId)) {
+      if (visited.has(d.id)) continue; // 防环兜底
+      visited.add(d.id);
       out.push({ doc: d, depth });
       if (!collapsed.has(d.id)) walk(d.id, depth + 1);
     }
@@ -140,13 +143,20 @@ export function buildTree(docs: Doc[], collapsed: Set<string>): TreeNode[] {
 }
 
 export function docTreeContent(docs: Doc[], doc: Doc, depth = 0): string {
-  const kids = childrenOf(docs, doc.id);
-  if (!kids.length) return doc.content || '';
-  let out = doc.content || '';
-  for (const child of kids) {
-    const level = Math.min(depth + 2, 6);
-    const title = (child.name || '未命名').replace(/\.(md|markdown|txt)$/i, '');
-    out = (out ? out + '\n\n' : '') + '#'.repeat(level) + ' ' + title + '\n\n' + docTreeContent(docs, child, depth + 1);
-  }
-  return out;
+  const visited = new Set<string>();
+  const walk = (d: Doc, dDepth: number): string => {
+    if (visited.has(d.id)) return ''; // 防环兜底
+    visited.add(d.id);
+    const kids = childrenOf(docs, d.id);
+    if (!kids.length) return d.content || '';
+    let out = d.content || '';
+    for (const child of kids) {
+      if (visited.has(child.id)) continue;
+      const level = Math.min(dDepth + 2, 6);
+      const title = (child.name || '未命名').replace(/\.(md|markdown|txt)$/i, '');
+      out = (out ? out + '\n\n' : '') + '#'.repeat(level) + ' ' + title + '\n\n' + walk(child, dDepth + 1);
+    }
+    return out;
+  };
+  return walk(doc, depth);
 }

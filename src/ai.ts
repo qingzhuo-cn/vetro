@@ -15,6 +15,14 @@ function normalizeEndpoint(e: string): string {
   return u.replace(/\/+$/, '');
 }
 
+function parseJson(text: string): any {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error('接口返回了无法解析的内容（非 JSON）');
+  }
+}
+
 /** 拉取模型列表：GET {endpoint}/models */
 export async function fetchModels(cfg: AiConfig): Promise<string[]> {
   const endpoint = normalizeEndpoint(cfg.endpoint);
@@ -26,7 +34,7 @@ export async function fetchModels(cfg: AiConfig): Promise<string[]> {
     timeout_secs: 30,
   });
   if (res.status >= 400) throw new Error(`HTTP ${res.status}：${res.body.slice(0, 200)}`);
-  const data = JSON.parse(res.body);
+  const data = parseJson(res.body);
   const list: string[] = ((data.data as unknown[]) || [])
     .map((m) => (m as { id?: string })?.id)
     .filter((x): x is string => typeof x === 'string' && x.length > 0);
@@ -49,7 +57,7 @@ export async function chatCompletion(cfg: AiConfig, messages: ChatMessage[]): Pr
     timeout_secs: 120,
   });
   if (res.status >= 400) throw new Error(`HTTP ${res.status}：${res.body.slice(0, 300)}`);
-  const data = JSON.parse(res.body);
+  const data = parseJson(res.body);
   return data.choices?.[0]?.message?.content ?? '';
 }
 

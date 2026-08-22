@@ -10,7 +10,9 @@ export const editorViewRef: { current: EditorView | null } = { current: null };
 
 /* 在光标处插入一张 base64 图片的 Markdown */
 function insertImageDataUrl(view: EditorView, dataUrl: string, name = '图片') {
-  const md = `![${name}](${dataUrl})`;
+  // 去除会破坏 Markdown 语法的字符（]、(、)、[）
+  const alt = (name || '图片').replace(/[\\[\]()]/g, ' ').trim() || '图片';
+  const md = `![${alt}](${dataUrl})`;
   const { from, to } = view.state.selection.main;
   view.dispatch({ changes: { from, to, insert: md }, selection: { anchor: from + md.length } });
 }

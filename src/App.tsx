@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore, buildTree, docTreeContent, childrenOf } from './store';
 import { renderMarkdown, highlightCode, previewElRef, htmlToMarkdown } from './markdown';
@@ -6,19 +6,17 @@ import { createEditor, editorViewRef, jumpToLine } from './editor';
 import { PluginManager } from './plugins';
 import type { Command, RenderHooks } from './plugins';
 import { ACCENTS, ICONS, rgba, lighten, darken } from './presets';
-import { defaultConfig } from './types';
 import type { Doc, AppConfig, ViewMode } from './types';
 import type { Extension } from '@codemirror/state';
+import type { EditorView } from '@codemirror/view';
 import { demoPlugin } from './demo-plugin';
-import { isTauri, getVersion, secureGet, secureSet, secureDelete, saveFileDialog, writeTextFile, dbInit, dbLoadState, dbSaveState, dbSearch } from './backend';
+import { isTauri, getVersion, secureGet, secureSet, secureDelete, saveFileDialog, writeTextFile, dbInit, dbLoadState, dbSaveState, dbSearch, STORAGE_KEY } from './backend';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import AiPanel from './AiPanel';
 import SettingsPanel from './SettingsPanel';
 import SearchPanel from './SearchPanel';
 import { HELP_DOC } from './help';
 import { checkForUpdates } from './updater';
-
-const STORAGE_KEY = 'vetro::v2';
 
 /* ===== 全局 toast ===== */
 type ToastItem = { id: number; msg: string; kind: string };
@@ -70,13 +68,26 @@ function BrandLogo({ iconId }: { iconId: string }) {
 function EditorPane({ doc, extra }: { doc: Doc; extra: Extension[] }) {
   const updateDoc = useStore((s) => s.updateDoc);
   const ref = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<EditorView | null>(null);
   useEffect(() => {
     if (!ref.current) return;
     const view = createEditor(ref.current, doc.content, (v) => updateDoc(doc.id, { content: v }), extra);
+    viewRef.current = view;
     editorViewRef.current = view;
-    return () => { if (editorViewRef.current === view) editorViewRef.current = null; view.destroy(); };
+    return () => { if (editorViewRef.current === view) editorViewRef.current = null; view.destroy(); viewRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.id]);
+
+  // 预览（所见即所得）改动 → 同步回编辑器内容（编辑器自身输入则跳过）
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const cur = view.state.doc.toString();
+    if (cur === doc.content) return;
+    view.dispatch({ changes: { from: 0, to: cur.length, insert: doc.content } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc.content]);
+
   return <div className="editor-host" ref={ref} />;
 }
 
@@ -97,6 +108,8 @@ function PreviewPane({ doc, hooks }: { doc: Doc; hooks: RenderHooks[] }) {
     if (!el) return;
     previewElRef.current = el;
     if (skipRef.current) { skipRef.current = false; return; }
+    // 外部改动（编辑器等）→ 取消预览待同步的防抖定时器，避免旧内容回写覆盖
+    if (timerRef.current != null) { window.clearTimeout(timerRef.current); timerRef.current = null; }
     el.innerHTML = html;
     highlightCode(el);
     return () => { if (previewElRef.current === el) previewElRef.current = null; };
@@ -126,6 +139,12 @@ function PreviewPane({ doc, hooks }: { doc: Doc; hooks: RenderHooks[] }) {
   const onInput = () => {
     if (timerRef.current != null) window.clearTimeout(timerRef.current);
     timerRef.current = window.setTimeout(syncFromPreview, 400);
+  };
+
+  // 预览失焦（如切到编辑器）时立即同步，避免丢编辑
+  const onBlur = () => {
+    if (timerRef.current != null) { window.clearTimeout(timerRef.current); timerRef.current = null; }
+    syncFromPreview();
   };
 
   // 在坐标处插入节点（优先用 caretRangeFromPoint）
@@ -261,6 +280,7 @@ function PreviewPane({ doc, hooks }: { doc: Doc; hooks: RenderHooks[] }) {
         contentEditable
         suppressContentEditableWarning
         onInput={onInput}
+        onBlur={onBlur}
         onClick={onClickPlace}
         onDragStart={onDragStart}
         onDragOver={onDragOver}

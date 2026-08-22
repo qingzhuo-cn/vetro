@@ -36,7 +36,8 @@ export interface SearchHit {
 /* ===== 版本 ===== */
 export function getVersion(): Promise<string> {
   if (isTauri) return invoke<string>('get_version');
-  return Promise.resolve('2.2.0');
+  // 浏览器开发态 / 鸿蒙 H5 壳的回退版本号，需与 package.json 保持一致
+  return Promise.resolve('2.4.2');
 }
 
 /* ===== 密钥存储（DPAPI / Keychain / 鸿蒙安全存储 / localStorage 兜底） ===== */
@@ -118,7 +119,8 @@ export async function httpRequest(req: HttpRequest): Promise<HttpResponse> {
 
 /* ===== SQLite 存储 + FTS5 全文搜索（Tauri rusqlite / 鸿蒙 relationalStore / localStorage 兜底） ===== */
 
-const STORAGE_KEY = 'vetro::v2';
+/** localStorage 兜底 / 旧数据迁移共用的存储键 */
+export const STORAGE_KEY = 'vetro::v2';
 
 export async function dbInit(): Promise<void> {
   const b = bridge();
