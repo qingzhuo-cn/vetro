@@ -4,7 +4,7 @@ import DOMPurify from 'dompurify';
 import JSZip from 'jszip';
 import { useStore, buildTree, docTreeContent, childrenOf } from './store';
 import { renderMarkdown, highlightCode, previewElRef, htmlToMarkdown } from './markdown';
-import { createEditor, editorViewRef, jumpToLine, openEditorSearch } from './editor';
+import { createEditor, editorViewRef, jumpToLine } from './editor';
 import { PluginManager } from './plugins';
 import type { Command, RenderHooks } from './plugins';
 import { ACCENTS, ICONS, rgba, lighten, darken } from './presets';
@@ -761,8 +761,7 @@ function Topbar({ commands, onNew, onCycleView, onToggleSidebar, onOpenAi, onOpe
           </div>
         </div>
         <button className="btn ghost" onClick={onCycleView}>视图</button>
-        <button className="btn ghost" onClick={onOpenSearch} title="全局搜索">🔍</button>
-        <button className="btn ghost" onClick={openEditorSearch} title="当前文档查找 (Ctrl+F)">🔎</button>
+        <button className="btn ghost" onClick={onOpenSearch} title="搜索 (Ctrl+F)">🔍 搜索</button>
         <button className="btn ghost" onClick={() => useStore.getState().undo()} title="撤销 Ctrl+Z">↶</button>
         <button className="btn ghost" onClick={() => useStore.getState().redo()} title="重做 Ctrl+Shift+Z">↷</button>
         <button className="btn ghost" onClick={() => setCfg({ theme: cfg.theme === 'dark' ? 'light' : 'dark' })}>{resolveTheme(cfg) === 'dark' ? '☀' : '🌙'}</button>

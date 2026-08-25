@@ -452,11 +452,12 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 /* ===== 批量导出按钮 ===== */
 .export-dropdown { position: relative; display: inline-block; }
 .export-menu {
-  position: absolute; top: 100%; right: 0; margin-top: 4px;
+  display: none; position: absolute; top: 100%; right: 0; margin-top: 4px;
   background: var(--bg-2); border: 1px solid var(--glass-border);
   border-radius: 10px; padding: 4px; min-width: 140px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3); z-index: 50;
 }
+.export-dropdown:hover .export-menu { display: block; }
 .export-menu-item {
   display: block; width: 100%; text-align: left; padding: 6px 12px;
   border-radius: 8px; font-size: 12px; border: none; background: none;
