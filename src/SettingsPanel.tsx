@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import JSZip from 'jszip';
 import { useStore } from './store';
 import { ACCENTS, ICONS } from './presets';
 import { webdavList, webdavGet, webdavPut, encodePath } from './webdav';
 import { checkForUpdates } from './updater';
-import { getVersion } from './backend';
+import { getVersion, readBinaryFile } from './backend';
 import type { ThemeMode, SyncConfig } from './types';
+import { docTreeContent } from './store';
 
 function UpdateSection() {
   const [busy, setBusy] = useState(false);

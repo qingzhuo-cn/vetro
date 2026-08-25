@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import DOMPurify from 'dompurify';
+import JSZip from 'jszip';
 import { useStore, buildTree, docTreeContent, childrenOf } from './store';
 import { renderMarkdown, highlightCode, previewElRef, htmlToMarkdown } from './markdown';
-import { createEditor, editorViewRef, jumpToLine } from './editor';
+import { createEditor, editorViewRef, jumpToLine, openEditorSearch } from './editor';
 import { PluginManager } from './plugins';
 import type { Command, RenderHooks } from './plugins';
 import { ACCENTS, ICONS, rgba, lighten, darken } from './presets';
@@ -10,13 +12,14 @@ import type { Doc, AppConfig, ViewMode } from './types';
 import type { Extension } from '@codemirror/state';
 import type { EditorView } from '@codemirror/view';
 import { demoPlugin } from './demo-plugin';
-import { isTauri, getVersion, secureGet, secureSet, secureDelete, saveFileDialog, writeTextFile, dbInit, dbLoadState, dbSaveState, dbSearch, STORAGE_KEY } from './backend';
+import { isTauri, getVersion, secureGet, secureSet, secureDelete, saveFileDialog, writeTextFile, dbInit, dbLoadState, dbSaveState, dbSearch, readBinaryFile, STORAGE_KEY } from './backend';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import AiPanel from './AiPanel';
 import SettingsPanel from './SettingsPanel';
 import SearchPanel from './SearchPanel';
 import { HELP_DOC } from './help';
 import { checkForUpdates } from './updater';
+import { saveImageToDisk, getImagesDir, loadExternalImages } from './image';
 
 /* ===== 全局 toast ===== */
 type ToastItem = { id: number; msg: string; kind: string };
@@ -106,14 +109,32 @@ function PreviewPane({ doc, hooks }: { doc: Doc; hooks: RenderHooks[] }) {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    previewElRef.current = el;
     if (skipRef.current) { skipRef.current = false; return; }
     // 外部改动（编辑器等）→ 取消预览待同步的防抖定时器，避免旧内容回写覆盖
     if (timerRef.current != null) { window.clearTimeout(timerRef.current); timerRef.current = null; }
     el.innerHTML = html;
     highlightCode(el);
-    return () => { if (previewElRef.current === el) previewElRef.current = null; };
+    // 加载外置图片：将相对路径的 img src 转为 data URL
+    loadExternalImages(el);
+    // wiki-link 点击跳转
+    el.querySelectorAll('.wiki-link[data-wiki]').forEach((link) => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const name = (link as HTMLElement).dataset.wiki;
+        if (!name) return;
+        const target = useStore.getState().docs.find((d) => d.name.replace(/\.\w+$/i, '') === name);
+        if (target) useStore.getState().setActive(target.id);
+      });
+    });
   }, [html]);
+
+  // ref 绑定/解绑独立于内容渲染，避免每次 html 变化都清空 previewElRef
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    previewElRef.current = el;
+    return () => { if (previewElRef.current === el) previewElRef.current = null; };
+  }, []);
 
   // 点击其它位置关闭右键菜单
   useEffect(() => {
@@ -129,11 +150,37 @@ function PreviewPane({ doc, hooks }: { doc: Doc; hooks: RenderHooks[] }) {
     if (!el) return;
     try {
       const md = htmlToMarkdown(el.innerHTML);
+      // 转换失败/清空保护：原文非空而转换结果为空时拒绝覆盖，防止丢稿
+      if (!md && doc.content) { console.warn('预览 → Markdown 转换结果为空，跳过同步'); return; }
       if (md !== doc.content) {
         skipRef.current = true;
         updateDoc(doc.id, { content: md });
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.warn('预览同步失败:', e); }
+  };
+
+  // 粘贴富文本：净化后再插入（contentEditable 的 innerHTML 不经过 renderMarkdown 的 sanitize）
+  const onPaste = (e: React.ClipboardEvent) => {
+    const cd = e.clipboardData;
+    if (!cd) return;
+    const htmlText = cd.getData('text/html');
+    if (htmlText) {
+      e.preventDefault();
+      const clean = DOMPurify.sanitize(htmlText, { FORBID_TAGS: ['style', 'script'], ADD_ATTR: ['target'] });
+      const tpl = document.createElement('template');
+      tpl.innerHTML = clean;
+      const frag = tpl.content;
+      const sel = window.getSelection();
+      const range = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+      if (range) {
+        range.deleteContents();
+        range.insertNode(frag);
+      } else {
+        ref.current?.appendChild(frag);
+      }
+      syncFromPreview();
+    }
+    // 纯文本 / 图片走默认路径（图片由 onDrop 同款逻辑处理不了，交给默认粘贴行为）
   };
 
   const onInput = () => {
@@ -169,17 +216,13 @@ function PreviewPane({ doc, hooks }: { doc: Doc; hooks: RenderHooks[] }) {
   };
 
   const insertFileImage = (e: React.DragEvent, file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = String(reader.result || '');
-      if (!dataUrl) return;
+    saveImageToDisk(file, '').then(({ dataUrl }) => {
       const img = document.createElement('img');
       img.src = dataUrl;
       img.alt = file.name.replace(/\.[^.]+$/, '');
       placeNodeAt(e.clientX, e.clientY, img);
       syncFromPreview();
-    };
-    reader.readAsDataURL(file);
+    }).catch(() => {});
   };
 
   // 图片拖拽：移动（剪切到目标位置，不复制）
@@ -281,6 +324,7 @@ function PreviewPane({ doc, hooks }: { doc: Doc; hooks: RenderHooks[] }) {
         suppressContentEditableWarning
         onInput={onInput}
         onBlur={onBlur}
+        onPaste={onPaste}
         onClick={onClickPlace}
         onDragStart={onDragStart}
         onDragOver={onDragOver}
@@ -300,6 +344,38 @@ function PreviewPane({ doc, hooks }: { doc: Doc; hooks: RenderHooks[] }) {
   );
 }
 
+/* ===== 标签面板 ===== */
+function TagPanel() {
+  const docs = useStore((s) => s.docs);
+  const filterTag = useStore((s) => s.filterTag);
+  const setFilterTag = useStore((s) => s.setFilterTag);
+  const allTags = useMemo(() => {
+    const tags = new Map<string, number>();
+    for (const d of docs) for (const t of d.tags) tags.set(t, (tags.get(t) || 0) + 1);
+    return Array.from(tags.entries()).sort((a, b) => b[1] - a[1]);
+  }, [docs]);
+  if (!allTags.length) {
+    return <div className="doc-empty"><p>暂无标签</p><span>在文档列表中点击标签图标添加</span></div>;
+  }
+  return (
+    <div className="tag-panel">
+      <div className="tag-list">
+        {allTags.map(([tag, count]) => (
+          <button key={tag} className={'tag-chip' + (filterTag === tag ? ' active' : '')}
+            onClick={() => setFilterTag(filterTag === tag ? null : tag)}>
+            {tag}<span className="tag-count">{count}</span>
+          </button>
+        ))}
+      </div>
+      {filterTag && (
+        <div style={{ marginTop: 8 }}>
+          <button className="btn ghost sm" onClick={() => setFilterTag(null)}>清除筛选</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ===== 文档树 ===== */
 function DocTree() {
   const docs = useStore((s) => s.docs);
@@ -310,10 +386,16 @@ function DocTree() {
   const setDocParent = useStore((s) => s.setDocParent);
   const moveDoc = useStore((s) => s.moveDoc);
   const toggleDocSync = useStore((s) => s.toggleDocSync);
+  const addDocTag = useStore((s) => s.addDocTag);
+  const removeDocTag = useStore((s) => s.removeDocTag);
+  const toggleDocFavorite = useStore((s) => s.toggleDocFavorite);
+  const filterTag = useStore((s) => s.filterTag);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [tagInputId, setTagInputId] = useState<string | null>(null);
+  const [tagInputVal, setTagInputVal] = useState('');
 
-  const nodes = useMemo(() => buildTree(docs, collapsed), [docs, collapsed]);
+  const nodes = useMemo(() => buildTree(docs, collapsed, filterTag), [docs, collapsed, filterTag]);
   const toggle = (id: string) => setCollapsed((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   const handleDrop = (e: React.DragEvent, parentId: string | null) => {
@@ -364,11 +446,45 @@ function DocTree() {
               : <span className="doc-caret ph" />}
             <div className="doc-ico">{initial}</div>
             <div className="doc-meta">
-              <div className="doc-name">{doc.name}</div>
+              <div className="doc-name">
+                {(doc as any).favorite && <span className="doc-fav active">★</span>}
+                {doc.name}
+              </div>
               <div className="doc-sub">{words} 字</div>
+              {doc.tags.length > 0 && (
+                <div className="doc-tags">
+                  {doc.tags.map((tag) => (
+                    <span key={tag} className="tag-pill">
+                      {tag}
+                      <button className="tag-pill-remove" onClick={(e) => { e.stopPropagation(); removeDocTag(doc.id, tag); }}>×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {tagInputId === doc.id && (
+                <input
+                  className="search-input"
+                  style={{ marginTop: 2, fontSize: 10, padding: '2px 6px' }}
+                  value={tagInputVal}
+                  placeholder="输入标签回车"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && tagInputVal.trim()) {
+                      addDocTag(doc.id, tagInputVal.trim());
+                      setTagInputVal('');
+                      setTagInputId(null);
+                    }
+                    if (e.key === 'Escape') { setTagInputId(null); setTagInputVal(''); }
+                  }}
+                  onChange={(e) => setTagInputVal(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              )}
             </div>
-            <button className="doc-sync on" title="同步" onClick={(e) => { e.stopPropagation(); toggleDocSync(doc.id); }}>☁</button>
+            <button className={'doc-sync ' + (doc.sync !== false ? 'on' : 'off')} title={doc.sync !== false ? '已启用同步' : '已禁用同步'} onClick={(e) => { e.stopPropagation(); toggleDocSync(doc.id); }}>☁</button>
             <button className="doc-subnew" title="新建子文档" onClick={(e) => { e.stopPropagation(); createDoc(doc.name.replace(/\.\w+$/i, '') + ' · 子文档.md', '', doc.id); }}>＋</button>
+            <button className="doc-subnew" title="添加标签" onClick={(e) => { e.stopPropagation(); setTagInputId(tagInputId === doc.id ? null : doc.id); setTagInputVal(''); }}>🏷</button>
+            <button className={'doc-subnew' + ((doc as any).favorite ? ' doc-fav active' : '')} title={(doc as any).favorite ? '取消收藏' : '收藏'} onClick={(e) => { e.stopPropagation(); toggleDocFavorite(doc.id); }}>★</button>
             <button className="doc-move" title="提升为主文档" onClick={(e) => { e.stopPropagation(); setDocParent(doc.id, null); }}>↳</button>
             <button className="doc-del" title="删除" onClick={(e) => { e.stopPropagation(); deleteDoc(doc.id); }}>🗑</button>
           </div>
@@ -471,7 +587,7 @@ function WindowControls() {
 }
 
 /* ===== 顶栏 ===== */
-function Topbar({ commands, onNew, onCycleView, onToggleSidebar, onOpenAi, onOpenSettings, onExport, onOpenSearch, onOpenHelp }: { commands: Command[]; onNew: () => void; onCycleView: () => void; onToggleSidebar: () => void; onOpenAi: () => void; onOpenSettings: () => void; onExport: () => void; onOpenSearch: () => void; onOpenHelp: () => void }) {
+function Topbar({ commands, onNew, onCycleView, onToggleSidebar, onOpenAi, onOpenSettings, onExport, onExportZip, onOpenSearch, onOpenHelp }: { commands: Command[]; onNew: () => void; onCycleView: () => void; onToggleSidebar: () => void; onOpenAi: () => void; onOpenSettings: () => void; onExport: () => void; onExportZip: () => void; onOpenSearch: () => void; onOpenHelp: () => void }) {
   const cfg = useStore((s) => s.cfg);
   const setCfg = useStore((s) => s.setCfg);
   const [openCmd, setOpenCmd] = useState(false);
@@ -489,10 +605,20 @@ function Topbar({ commands, onNew, onCycleView, onToggleSidebar, onOpenAi, onOpe
       </div>
       <div className="topbar-actions">
         <button className="btn ghost" onClick={onNew}>＋ 新建</button>
-        <button className="btn ghost" onClick={onExport}>⭳ 导出</button>
+        <div className="export-dropdown">
+          <button className="btn ghost" onClick={onExport}>⭳ 导出</button>
+          <div className="export-menu">
+            <button className="export-menu-item" onClick={onExport}>导出当前文档</button>
+            <button className="export-menu-item" onClick={onExportZip}>全部导出 ZIP</button>
+          </div>
+        </div>
         <button className="btn ghost" onClick={onCycleView}>视图</button>
-        <button className="btn ghost" onClick={onOpenSearch} title="搜索">🔍</button>
+        <button className="btn ghost" onClick={onOpenSearch} title="全局搜索">🔍</button>
+        <button className="btn ghost" onClick={openEditorSearch} title="当前文档查找 (Ctrl+F)">🔎</button>
+        <button className="btn ghost" onClick={() => useStore.getState().undo()} title="撤销 Ctrl+Z">↶</button>
+        <button className="btn ghost" onClick={() => useStore.getState().redo()} title="重做 Ctrl+Shift+Z">↷</button>
         <button className="btn ghost" onClick={() => setCfg({ theme: cfg.theme === 'dark' ? 'light' : 'dark' })}>{resolveTheme(cfg) === 'dark' ? '☀' : '🌙'}</button>
+        <button className="btn ghost" onClick={() => setCfg({ focusMode: !cfg.focusMode })} title={cfg.focusMode ? '退出专注模式' : '专注模式'}>{cfg.focusMode ? '✕ 专注' : '🖥 专注'}</button>
         <button className="btn ghost" onClick={onOpenSettings}>⚙ 设置</button>
         <button className="btn ghost" onClick={onOpenHelp} title="使用说明">❓</button>
         <button className="btn ghost" onClick={() => setOpenCmd(!openCmd)}>⌘</button>
@@ -519,13 +645,18 @@ function StatusBar() {
   const cfg = useStore((s) => s.cfg);
   const activeId = useStore((s) => s.activeId);
   const docs = useStore((s) => s.docs);
+  const saveStatus = useStore((s) => s.saveStatus);
   const d = docs.find((x) => x.id === activeId);
   const words = d ? (d.content || '').replace(/\s/g, '').length : 0;
   const [ver, setVer] = useState('');
   useEffect(() => { getVersion().then(setVer).catch(() => {}); }, []);
+  const statusLabel = saveStatus === 'saving' ? '保存中…'
+    : saveStatus === 'saved' ? '已保存 ✓'
+    : saveStatus === 'error' ? '保存失败 ⚠'
+    : '自动保存';
   return (
     <footer className="statusbar">
-      <span className="save-state">自动保存</span>
+      <span className={'save-state ' + saveStatus}>{statusLabel}</span>
       <span className="status-sep" />
       <span>{words} 字</span>
       <span className="spacer" />
@@ -574,15 +705,21 @@ export default function App() {
         let raw = await dbLoadState();
         if (!raw) raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
-          load(JSON.parse(raw));
-        } else {
-          // 首次启动：内置「使用说明」文档
-          useStore.getState().createDoc('使用说明.md', HELP_DOC);
+          const parsed = JSON.parse(raw);
+          // 基础 schema 校验：必须是普通对象（数组也会通过 typeof 'object'，需排除）
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            load(parsed);
+          } else {
+            console.warn('存储数据格式错误，已忽略');
+          }
         }
+        // 首次启动或数据为空：内置「使用说明」文档
         if (useStore.getState().docs.length === 0) {
           useStore.getState().createDoc('使用说明.md', HELP_DOC);
         }
-      } catch (e) { /* ignore */ }
+      } catch (e) {
+        console.error('初始化失败:', e);
+      }
     })();
     applyTheme(useStore.getState().cfg);
     pm.activate(demoPlugin).then(() => {
@@ -590,24 +727,34 @@ export default function App() {
       setRenderHooks(pm.renderers.all());
       setEditorExts(pm.editors.all());
     });
-    // 从系统密钥链加载 AI 密钥（不落存储）
-    secureGet('ai-key')
-      .then((k) => {
-        const cur = useStore.getState().cfg.ai.key;
-        if (k && !cur) setCfg({ ai: { ...useStore.getState().cfg.ai, key: k } });
+    // 从系统密钥链加载 AI 密钥与 WebDAV 密码（不落存储）
+    Promise.all([secureGet('ai-key'), secureGet('sync-password')])
+      .then(([aiKey, syncPwd]) => {
+        const s = useStore.getState();
+        const patches: Partial<AppConfig> = {};
+        if (aiKey && !s.cfg.ai.key) patches.ai = { ...s.cfg.ai, key: aiKey };
+        if (syncPwd && !s.cfg.sync.password) patches.sync = { ...s.cfg.sync, password: syncPwd };
+        if (Object.keys(patches).length) setCfg(patches);
       })
       .catch(() => {})
       .finally(() => { keyLoaded.current = true; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // AI 密钥变化 → 写入系统密钥链
+  // AI 密钥与 WebDAV 密码变化 → 写入系统密钥链
   useEffect(() => {
     if (!keyLoaded.current) return;
     const key = cfg.ai.key;
     if (key) secureSet('ai-key', key).catch(() => {});
     else secureDelete('ai-key').catch(() => {});
   }, [cfg.ai.key]);
+
+  useEffect(() => {
+    if (!keyLoaded.current) return;
+    const pwd = cfg.sync.password;
+    if (pwd) secureSet('sync-password', pwd).catch(() => {});
+    else secureDelete('sync-password').catch(() => {});
+  }, [cfg.sync.password]);
 
   // toast 注入
   useEffect(() => {
@@ -622,15 +769,28 @@ export default function App() {
   // 主题变化
   useEffect(() => { applyTheme(cfg); }, [cfg]);
 
-  // 持久化（防抖）：SQLite（Tauri）或 localStorage（浏览器）；密钥只存系统钥匙串
+  // 持久化（防抖）：SQLite（Tauri）或 localStorage（浏览器）；密钥与密码只存系统钥匙串
   useEffect(() => {
     const t = setTimeout(() => {
       const s = useStore.getState();
+      s.setSaveStatus('saving');
       const { key: _key, ...aiSafe } = s.cfg.ai;
-      const cfgSafe = { ...s.cfg, ai: aiSafe };
+      const { password: _pwd, ...syncSafe } = s.cfg.sync;
+      const cfgSafe = { ...s.cfg, ai: aiSafe, sync: syncSafe };
       const stateJson = JSON.stringify({ docs: s.docs, trash: s.trash, activeId: s.activeId, cfg: cfgSafe });
-      const docsJson = JSON.stringify(s.docs.map((d) => ({ id: d.id, name: d.name, content: d.content })));
-      dbSaveState(stateJson, docsJson).catch(() => {});
+      const docsJson = JSON.stringify(s.docs.map((d) => ({
+        id: d.id,
+        name: d.name,
+        content: (d.content || '').replace(/!\[[^\]]*\]\(data:[^)]*\)/g, '![](data:image-omitted)'),
+      })));
+      dbSaveState(stateJson, docsJson)
+        .then(() => {
+          useStore.getState().setSaveStatus('saved');
+          setTimeout(() => {
+            if (useStore.getState().saveStatus === 'saved') useStore.getState().setSaveStatus('idle');
+          }, 1500);
+        })
+        .catch(() => { useStore.getState().setSaveStatus('error'); });
     }, 500);
     return () => clearTimeout(t);
   }, [docs, activeId, cfg]);
@@ -643,6 +803,17 @@ export default function App() {
       });
     }, 4000);
     return () => clearTimeout(t);
+  }, []);
+
+  // 撤销/重做全局快捷键 + 专注模式 ESC 退出
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); useStore.getState().undo(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey) { e.preventDefault(); useStore.getState().redo(); }
+      if (e.key === 'Escape' && useStore.getState().cfg.focusMode) { useStore.getState().setCfg({ focusMode: false }); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
   }, []);
 
   const active = docs.find((d) => d.id === activeId) ?? null;
@@ -668,6 +839,26 @@ export default function App() {
     }
   };
 
+  const exportZip = async () => {
+    try {
+      const zip = new JSZip();
+      for (const d of docs) {
+        const name = d.name || '未命名.md';
+        zip.file(name, d.content || '');
+      }
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `vetro-export-${new Date().toISOString().slice(0, 10)}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('已导出全部文档为 ZIP', 'ok');
+    } catch (e) {
+      toast('导出失败：' + (e instanceof Error ? e.message : String(e)), 'err');
+    }
+  };
+
   const openHelp = () => {
     const s = useStore.getState();
     const existing = s.docs.find((d) => d.name === '使用说明.md');
@@ -676,26 +867,32 @@ export default function App() {
   };
 
   return (
-    <div className="app">
+    <div className="app" data-focus={cfg.focusMode || undefined}>
       <div className="app-bg" aria-hidden>
         <div className="orb orb-1" /><div className="orb orb-2" /><div className="orb orb-3" />
       </div>
-      <Topbar commands={commands} onNew={() => createDoc()} onCycleView={cycleView} onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} onOpenAi={() => setAiOpen(true)} onOpenSettings={() => setSettingsOpen(true)} onExport={exportDoc} onOpenSearch={() => setSearchOpen(true)} onOpenHelp={openHelp} />
+      {!cfg.focusMode && <Topbar commands={commands} onNew={() => createDoc()} onCycleView={cycleView} onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} onOpenAi={() => setAiOpen(true)} onOpenSettings={() => setSettingsOpen(true)} onExport={exportDoc} onExportZip={exportZip} onOpenSearch={() => setSearchOpen(true)} onOpenHelp={openHelp} />}
+      {cfg.focusMode && (
+        <div className="focus-float-bar">
+          <button className="btn ghost sm" onClick={() => setCfg({ focusMode: false })}>✕ 退出专注</button>
+          <WindowControls />
+        </div>
+      )}
       <div className="workbench">
-        <aside className={'sidebar' + (sidebarCollapsed ? ' collapsed' : '')}>
+        <aside className={'sidebar' + (sidebarCollapsed || cfg.focusMode ? ' collapsed' : '')}>
           <div className="sidebar-head">
             <div className="sidebar-tabs">
-              {(['docs', 'outline', 'trash'] as const).map((t) => (
+              {(['docs', 'outline', 'tags', 'trash'] as const).map((t) => (
                 <button key={t} className={'sidebar-tab' + (sidebarTab === t ? ' active' : '')}
-                  title={t === 'docs' ? '文档' : t === 'outline' ? '大纲' : '回收站'}
+                  title={t === 'docs' ? '文档' : t === 'outline' ? '大纲' : t === 'tags' ? '标签' : '回收站'}
                   onClick={() => { setSidebarTab(t); if (sidebarCollapsed) setSidebarCollapsed(false); }}>
-                  <span className="tab-ico">{t === 'docs' ? '📄' : t === 'outline' ? '☰' : '🗑'}</span>
-                  {!sidebarCollapsed && <span className="tab-label">{t === 'docs' ? '文档' : t === 'outline' ? '大纲' : '回收站'}</span>}
+                  <span className="tab-ico">{t === 'docs' ? '📄' : t === 'outline' ? '☰' : t === 'tags' ? '🏷' : '🗑'}</span>
+                  {!sidebarCollapsed && <span className="tab-label">{t === 'docs' ? '文档' : t === 'outline' ? '大纲' : t === 'tags' ? '标签' : '回收站'}</span>}
                 </button>
               ))}
             </div>
           </div>
-          {!sidebarCollapsed && (sidebarTab === 'docs' ? <DocTree /> : sidebarTab === 'outline' ? <OutlineList /> : <TrashList />)}
+          {!sidebarCollapsed && (sidebarTab === 'docs' ? <DocTree /> : sidebarTab === 'outline' ? <OutlineList /> : sidebarTab === 'tags' ? <TagPanel /> : <TrashList />)}
         </aside>
         <div className="editor-shell">
           <div className="view-tabs">

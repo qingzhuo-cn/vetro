@@ -89,15 +89,6 @@ export interface VetroPlugin {
 
 // —— 注册表实现 ——
 
-class SetRegistry<T> {
-  private items = new Map<string, T>();
-  register(id: string, item: T): Disposable {
-    this.items.set(id, item);
-    return { dispose: () => { this.items.delete(id); } };
-  }
-  all(): T[] { return Array.from(this.items.values()); }
-}
-
 class CommandRegistryImpl implements CommandRegistry {
   private items = new Map<string, Command>();
   register(cmd: Command): Disposable {
@@ -165,37 +156,61 @@ export class PluginManager {
   readonly syncBackends = new SyncBackendRegistryImpl();
 
   private plugins = new Map<string, VetroPlugin>();
+  // 每个插件激活期间注册项的 Disposable，卸载时统一释放
   private disposables = new Map<string, Disposable[]>();
+  private activatingId: string | null = null;
 
   constructor(private ui: UiApi, private log: (msg: string) => void = () => {}) {}
 
+  /** 记录当前激活中插件的注册动作，便于 deactivate 时回收 */
+  private track(register: () => Disposable): Disposable {
+    const d = register();
+    if (this.activatingId) {
+      const list = this.disposables.get(this.activatingId) || [];
+      list.push(d);
+      this.disposables.set(this.activatingId, list);
+    }
+    return d;
+  }
+
   private context(): PluginContext {
     return {
-      commands: this.commands,
-      panels: this.panels,
-      renderers: this.renderers,
-      editors: this.editors,
-      aiProviders: this.aiProviders,
-      syncBackends: this.syncBackends,
+      commands: { register: (cmd) => this.track(() => this.commands.register(cmd)) },
+      panels: { register: (panel) => this.track(() => this.panels.register(panel)) },
+      renderers: { register: (hooks) => this.track(() => this.renderers.register(hooks)) },
+      editors: { register: (ext) => this.track(() => this.editors.register(ext)) },
+      aiProviders: { register: (p) => this.track(() => this.aiProviders.register(p)) },
+      syncBackends: { register: (b) => this.track(() => this.syncBackends.register(b)) },
       ui: this.ui,
       log: this.log
     };
   }
 
   async activate(plugin: VetroPlugin): Promise<void> {
-    if (this.plugins.has(plugin.id)) return;
+    if (this.plugins.has(plugin.id)) {
+      this.log(`[plugin] ${plugin.name} 已在运行，忽略重复激活`);
+      return;
+    }
     const ctx = this.context();
-    const before = this.commands.all().length;
-    await plugin.activate(ctx);
-    this.plugins.set(plugin.id, plugin);
-    this.log(`[plugin] ${plugin.name} 已加载`);
-    void before;
+    this.activatingId = plugin.id;
+    try {
+      await plugin.activate(ctx);
+      this.plugins.set(plugin.id, plugin);
+      this.log(`[plugin] ${plugin.name} 已加载`);
+    } finally {
+      this.activatingId = null;
+    }
   }
 
   async deactivate(id: string): Promise<void> {
     const plugin = this.plugins.get(id);
     if (!plugin) return;
     await plugin.deactivate?.();
+    // 释放该插件注册的全部命令 / 面板 / 钩子 / 扩展
+    for (const d of this.disposables.get(id) || []) {
+      try { d.dispose(); } catch { /* 忽略单个释放失败 */ }
+    }
+    this.disposables.delete(id);
     this.plugins.delete(id);
     this.log(`[plugin] ${plugin.name} 已卸载`);
   }

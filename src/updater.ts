@@ -7,8 +7,15 @@ export interface UpdateInfo {
   notes: string;
 }
 
+/** 解析版本号为 [major, minor, patch, isRelease]，预发布（-beta/-rc 等）排在同版本正式版之前 */
 function parseVersion(v: string): number[] {
-  return (v || '').replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+  const clean = (v || '').trim().replace(/^v/i, '');
+  const dash = clean.indexOf('-');
+  const core = dash >= 0 ? clean.slice(0, dash) : clean;
+  const nums = core.split('.').map((n) => parseInt(n, 10) || 0);
+  while (nums.length < 3) nums.push(0);
+  nums.push(dash >= 0 ? 0 : 1); // 预发布 = 0，正式版 = 1
+  return nums;
 }
 
 /** latest > current 时返回 true */

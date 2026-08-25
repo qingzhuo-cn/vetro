@@ -1,34 +1,72 @@
-import { EditorState, type Extension } from '@codemirror/state';
-import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
+import { EditorState, type Extension, StateField, type Range } from '@codemirror/state';
+import { EditorView, keymap, lineNumbers, highlightActiveLine, Decoration, type DecorationSet, WidgetType } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
-import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
+import { search, searchKeymap, highlightSelectionMatches, openSearchPanel } from '@codemirror/search';
 
 /* 当前激活的编辑器实例（供大纲跳转等使用） */
 export const editorViewRef: { current: EditorView | null } = { current: null };
 
-/* 在光标处插入一张 base64 图片的 Markdown */
-function insertImageDataUrl(view: EditorView, dataUrl: string, name = '图片') {
-  // 去除会破坏 Markdown 语法的字符（]、(、)、[）
-  const alt = (name || '图片').replace(/[\\[\]()]/g, ' ').trim() || '图片';
-  const md = `![${alt}](${dataUrl})`;
-  const { from, to } = view.state.selection.main;
-  view.dispatch({ changes: { from, to, insert: md }, selection: { anchor: from + md.length } });
+/* ===== [[文档链接]] 装饰器 ===== */
+
+const wikiLinkRE = /\[\[([^\]]+)\]\]/g;
+
+class WikiLinkWidget extends WidgetType {
+  constructor(readonly text: string) { super(); }
+  toDOM() {
+    const a = document.createElement('a');
+    a.className = 'wiki-link';
+    a.textContent = this.text;
+    a.title = `跳转到「${this.text}」`;
+    return a;
+  }
+  eq(other: WikiLinkWidget) { return this.text === other.text; }
 }
 
-/* 读取图片文件 → 插入 */
+function wikiLinkDeco(state: EditorState): DecorationSet {
+  const decos: Range<ReturnType<typeof Decoration.replace>>[] = [];
+  const view = editorViewRef.current;
+  if (!view) return Decoration.none;
+  for (const { from, to } of view.visibleRanges) {
+    const text = state.doc.sliceString(from, to);
+    let m: RegExpExecArray | null;
+    wikiLinkRE.lastIndex = 0;
+    while ((m = wikiLinkRE.exec(text))) {
+      const start = from + m.index;
+      const end = start + m[0].length;
+      decos.push(Decoration.replace({ widget: new WikiLinkWidget(m[1]), side: 1 }).range(start, end));
+    }
+  }
+  return Decoration.set(decos, true);
+}
+
+const wikiLinkField = StateField.define<DecorationSet>({
+  create() { return Decoration.none; },
+  update(deco, tr) {
+    return tr.docChanged ? wikiLinkDeco(tr.state) : deco;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
+/* ===== 图片处理 ===== */
+
+/* 读取图片文件 → 压缩 → 插入相对路径 */
 function insertImageFile(view: EditorView, file: File) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    const dataUrl = String(reader.result || '');
-    if (!dataUrl) return;
-    insertImageDataUrl(view, dataUrl, file.name.replace(/\.[^.]+$/, '') || '图片');
-  };
-  reader.readAsDataURL(file);
+  import('./image').then(({ saveImageToDisk, getImagesDir }) =>
+    getImagesDir().then((dir: string) =>
+      saveImageToDisk(file, dir).then(({ relativePath }) => {
+        const name = file.name.replace(/\.[^.]+$/, '') || '图片';
+        const alt = name.replace(/[[\]()]/g, ' ').trim() || '图片';
+        const md = `![${alt}](${relativePath})`;
+        const { from, to } = view.state.selection.main;
+        view.dispatch({ changes: { from, to, insert: md }, selection: { anchor: from + md.length } });
+      })
+    )
+  ).catch(() => {});
 }
 
-/* 粘贴图片 → 插入 base64 Markdown */
+/* 粘贴图片 → 插入 Markdown */
 function imagePasteHandler(event: Event, view: EditorView): boolean {
   const ce = event as ClipboardEvent;
   const items = ce.clipboardData?.items;
@@ -74,6 +112,8 @@ function imageDropHandler(event: Event, view: EditorView): boolean {
   return inserted;
 }
 
+/* ===== 创建编辑器 ===== */
+
 export function createEditor(parent: HTMLElement, doc: string, onChange: (value: string) => void, extra: Extension[] = []): EditorView {
   const state = EditorState.create({
     doc,
@@ -85,6 +125,7 @@ export function createEditor(parent: HTMLElement, doc: string, onChange: (value:
       syntaxHighlighting(defaultHighlightStyle),
       highlightSelectionMatches(),
       search({ top: true }),
+      wikiLinkField,
       EditorView.domEventHandlers({
         paste: imagePasteHandler,
         dragover: imageDragOverHandler,
@@ -105,11 +146,17 @@ export function createEditor(parent: HTMLElement, doc: string, onChange: (value:
 export function jumpToLine(lineNumber: number) {
   const v = editorViewRef.current;
   if (!v) return;
-  const n = Math.max(1, lineNumber);
+  const n = Math.max(1, Math.min(lineNumber, v.state.doc.lines));
   const line = v.state.doc.line(n);
   v.dispatch({
     selection: { anchor: line.from },
     effects: EditorView.scrollIntoView(line.from, { y: 'center' })
   });
   v.focus();
+}
+
+/** 打开 CodeMirror 内置搜索面板 */
+export function openEditorSearch() {
+  const v = editorViewRef.current;
+  if (v) openSearchPanel(v);
 }

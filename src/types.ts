@@ -7,6 +7,8 @@ export interface Doc {
   parentId: string | null;
   filePath: string | null;
   sync: boolean;
+  tags: string[];
+  favorite: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -57,6 +59,8 @@ export interface AppConfig {
   customThemes: AccentTheme[];
   ai: AiConfig;
   sync: SyncConfig;
+  /** 专注模式：隐藏顶栏/侧栏/状态栏 */
+  focusMode: boolean;
 }
 
 export function defaultConfig(): AppConfig {
@@ -69,7 +73,8 @@ export function defaultConfig(): AppConfig {
     icon: 'markdown',
     customThemes: [],
     ai: { endpoint: '', key: '', model: 'deepseek-chat', ok: false },
-    sync: { enabled: false, url: '', username: '', password: '' }
+    sync: { enabled: false, url: '', username: '', password: '' },
+    focusMode: false,
   };
 }
 

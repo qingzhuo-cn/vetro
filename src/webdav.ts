@@ -26,7 +26,10 @@ export function parseHrefs(xml: string): string[] {
   while ((m = re.exec(xml))) {
     let h = m[1].trim();
     try { h = decodeURIComponent(h); } catch { /* keep raw */ }
-    if (h && !h.endsWith('/')) out.push(h);
+    if (!h || h.endsWith('/')) continue;
+    // 部分服务器返回完整 URL（http://host/path），剥掉 origin 只留路径，避免拼接出非法请求地址
+    h = h.replace(/^https?:\/\/[^/]+/i, '');
+    out.push(h);
   }
   return out;
 }

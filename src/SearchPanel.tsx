@@ -7,9 +7,11 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/** FTS5 用 [ ] 标记匹配片段，这里转成 <mark> 高亮 */
+/** FTS 用私有控制字符 \u0001/\u0002 标记匹配片段，这里转成 <mark> 高亮（先转义 HTML 再打标，正文里的 [ ] 不会被误吃） */
 function highlight(s: string): string {
-  return escapeHtml(s).replace(/\[/g, '<mark>').replace(/\]/g, '</mark>');
+  return escapeHtml(s)
+    .replace(/\u0001/g, '<mark>')
+    .replace(/\u0002/g, '</mark>');
 }
 
 export default function SearchPanel({ onClose }: { onClose: () => void }) {
@@ -18,14 +20,25 @@ export default function SearchPanel({ onClose }: { onClose: () => void }) {
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  // 序号守卫：快速连续输入时丢弃过期查询的响应，避免旧结果覆盖新结果
+  const seqRef = useRef(0);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
   const run = async (query: string) => {
     setQ(query);
+    const seq = ++seqRef.current;
     if (!query.trim()) { setHits([]); return; }
     setBusy(true);
-    try { setHits(await dbSearch(query)); } catch { setHits([]); } finally { setBusy(false); }
+    try {
+      const res = await dbSearch(query);
+      if (seq === seqRef.current) setHits(res);
+    } catch (e) {
+      console.warn('搜索失败:', e);
+      if (seq === seqRef.current) setHits([]);
+    } finally {
+      if (seq === seqRef.current) setBusy(false);
+    }
   };
 
   const open = (id: string) => { setActive(id); onClose(); };

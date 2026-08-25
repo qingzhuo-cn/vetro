@@ -4336,6 +4336,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 name = "vetro"
 version = "2.4.3"
 dependencies = [
+ "base64 0.22.1",
  "futures-util",
  "keyring",
  "log",
@@ -4347,6 +4348,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-log",
+ "url",
 ]
 
 [[package]]

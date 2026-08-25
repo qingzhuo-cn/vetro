@@ -176,6 +176,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .doc-sync, .doc-subnew, .doc-move, .doc-del { opacity: 0; width: 20px; height: 20px; flex-shrink: 0; border-radius: 5px; color: var(--fg-3); font-size: 12px; display: grid; place-items: center; transition: opacity var(--dur-fast), color var(--dur-fast), background-color var(--dur-fast); }
 .doc-item:hover .doc-sync, .doc-item:hover .doc-subnew, .doc-item:hover .doc-move, .doc-item:hover .doc-del { opacity: 1; }
 .doc-sync.on { color: var(--accent-strong); background: var(--accent-soft); }
+.doc-sync.off { color: var(--fg-3); opacity: 0.55; text-decoration: line-through; }
 .doc-subnew:hover, .doc-move:hover { color: var(--accent-strong); background: var(--accent-soft); }
 .doc-del:hover { color: var(--danger); background: var(--danger-soft); }
 .doc-purge { color: var(--danger) !important; }
@@ -384,3 +385,77 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .search-name { font-size: 13px; font-weight: 600; color: var(--fg-0); margin-bottom: 3px; }
 .search-snippet { font-size: 12px; color: var(--fg-2); line-height: 1.5; word-break: break-word; }
 .search-snippet mark { background: var(--accent-soft); color: var(--accent-strong); border-radius: 2px; padding: 0 1px; }
+
+/* ===== 专注模式浮动控件 ===== */
+.focus-float-bar {
+  position: fixed; top: 8px; right: 8px; z-index: 100;
+  display: flex; align-items: center; gap: 6px;
+  background: var(--glass-bg); backdrop-filter: blur(18px);
+  border: 1px solid var(--glass-border); border-radius: 12px;
+  padding: 4px 10px; opacity: 0; transition: opacity 0.3s;
+}
+.focus-float-bar:hover { opacity: 1; }
+.app[data-focus="true"] .topbar,
+.app[data-focus="true"] .sidebar,
+.app[data-focus="true"] .statusbar { display: none; }
+.app[data-focus="true"] .workbench { flex: 1; }
+.app[data-focus="true"] .toast-wrap { z-index: 200; }
+.app[data-focus="true"] .focus-float-bar { opacity: 0.3; }
+
+/* ===== 标签药丸 ===== */
+.tag-pill {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-size: 9px; padding: 1px 5px; border-radius: 6px;
+  background: var(--accent-soft); color: var(--accent-strong);
+  white-space: nowrap; line-height: 1.4;
+}
+.tag-pill-remove {
+  cursor: pointer; font-size: 8px; opacity: 0.6;
+  border: none; background: none; color: inherit; padding: 0; margin-left: 1px;
+}
+.tag-pill-remove:hover { opacity: 1; }
+.doc-tags { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 2px; }
+
+/* ===== 收藏星标 ===== */
+.doc-fav { font-size: 11px; margin-right: 2px; cursor: pointer; }
+.doc-fav.active { color: var(--accent-strong); }
+
+/* ===== 保存状态指示 ===== */
+.save-state { transition: color var(--dur-fast); }
+.save-state.saving { color: #f59e0b; }
+.save-state.saved { color: #22c55e; }
+.save-state.error { color: var(--danger); }
+
+/* ===== 标签面板 ===== */
+.tag-panel { padding: 10px; overflow-y: auto; }
+.tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-chip {
+  padding: 5px 12px; border-radius: 10px; font-size: 12px;
+  background: var(--glass-bg); border: 1px solid var(--glass-border);
+  color: var(--fg-1); cursor: pointer; transition: all var(--dur-fast);
+}
+.tag-chip:hover { border-color: var(--accent-border); color: var(--fg-0); }
+.tag-chip.active { background: var(--accent-soft); border-color: var(--accent-border); color: var(--accent-strong); }
+.tag-count { font-size: 10px; color: var(--fg-3); margin-left: 4px; }
+
+/* ===== 内部链接 ===== */
+.wiki-link {
+  color: var(--accent-strong); text-decoration: none; border-bottom: 1px dashed var(--accent-border);
+  cursor: pointer; transition: color var(--dur-fast);
+}
+.wiki-link:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ===== 批量导出按钮 ===== */
+.export-dropdown { position: relative; display: inline-block; }
+.export-menu {
+  position: absolute; top: 100%; right: 0; margin-top: 4px;
+  background: var(--bg-2); border: 1px solid var(--glass-border);
+  border-radius: 10px; padding: 4px; min-width: 140px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+.export-menu-item {
+  display: block; width: 100%; text-align: left; padding: 6px 12px;
+  border-radius: 8px; font-size: 12px; border: none; background: none;
+  color: var(--fg-1); cursor: pointer;
+}
+.export-menu-item:hover { background: var(--glass-bg-hi); color: var(--fg-0); }

@@ -16,14 +16,18 @@ const turndown = new TurndownService({
 export const previewElRef: { current: HTMLElement | null } = { current: null };
 
 export function renderMarkdown(md: string, hooks: RenderHooks[] = []): string {
+  // 预处理 [[wiki-link]] → <a class="wiki-link" data-wiki="目标文档名">目标文档名</a>
+  let processed = (md || '').replace(/\[\[([^\]]+)\]\]/g, (_m, name: string) =>
+    `<a class="wiki-link" data-wiki="${name.replace(/"/g, '&quot;')}">${name}</a>`
+  );
   let html: string;
   try {
-    html = marked.parse(md || '') as string;
+    html = marked.parse(processed) as string;
   } catch (e) {
     return '<pre>渲染失败</pre>';
   }
   for (const h of hooks) { if (h.before) html = h.before(html); }
-  html = DOMPurify.sanitize(html) as string;
+  html = DOMPurify.sanitize(html, { ADD_TAGS: ['a'], ADD_ATTR: ['data-wiki', 'class'] }) as string;
   for (const h of hooks) { if (h.after) html = h.after(html); }
   return html;
 }
@@ -33,12 +37,13 @@ export function htmlToMarkdown(html: string): string {
   try {
     return turndown.turndown(html || '').trim();
   } catch (e) {
+    console.warn('HTML → Markdown 转换失败:', e);
     return '';
   }
 }
 
 export function highlightCode(root: Element): void {
   root.querySelectorAll('pre code').forEach((el) => {
-    try { hljs.highlightElement(el as HTMLElement); } catch (e) { /* ignore */ }
+    try { hljs.highlightElement(el as HTMLElement); } catch (e) { console.warn('代码高亮失败:', e); }
   });
 }

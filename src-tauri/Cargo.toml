@@ -26,8 +26,12 @@ keyring = "3"
 reqwest = { version = "0.12", features = ["stream"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 futures-util = "0.3"
+url = "2"
+base64 = "0.22"
 
-# 体积优化：更小、更快的发布二进制
+# 体积优化：更小、更快的发布二进制。
+# 注意 panic = "abort"：任何 Rust panic 会直接终止进程（不会 unwind 到前端），
+# 所有 #[tauri::command] 必须返回 Result 而非让 panic 穿透。
 [profile.release]
 codegen-units = 1
 lto = true
