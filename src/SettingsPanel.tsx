@@ -185,6 +185,30 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
             </div>
           </section>
 
+          <section className="settings-group">
+            <h3>导出</h3>
+            <div className="settings-row">
+              <button className="btn ghost sm" onClick={() => {
+                const docs = useStore.getState().docs;
+                const html = docs.map((d) => {
+                  const content = d.content || '';
+                  return `<div style="page-break-after:always;padding:20px;">
+                    <h1>${d.name.replace(/\.\w+$/i, '')}</h1>
+                    <pre style="white-space:pre-wrap;font-family:sans-serif;">${content.replace(/</g, '&lt;')}</pre>
+                  </div>`;
+                }).join('');
+                const win = window.open('', '_blank');
+                if (win) {
+                  win.document.write(`<html><head><title>Vetro Export</title>
+                    <style>body{font-family:sans-serif;margin:40px;} h1{border-bottom:1px solid #ccc;padding-bottom:8px;}</style>
+                  </head><body>${html}</body></html>`);
+                  win.document.close();
+                  win.print();
+                }
+              }}>全部导出为 PDF</button>
+            </div>
+          </section>
+
           <SyncSection />
           <UpdateSection />
         </div>

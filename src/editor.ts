@@ -114,7 +114,7 @@ function imageDropHandler(event: Event, view: EditorView): boolean {
 
 /* ===== 创建编辑器 ===== */
 
-export function createEditor(parent: HTMLElement, doc: string, onChange: (value: string) => void, extra: Extension[] = []): EditorView {
+export function createEditor(parent: HTMLElement, doc: string, onChange: (value: string) => void, extra: Extension[] = [], typewriter = false): EditorView {
   const state = EditorState.create({
     doc,
     extensions: [
@@ -135,6 +135,11 @@ export function createEditor(parent: HTMLElement, doc: string, onChange: (value:
       EditorView.lineWrapping,
       EditorView.updateListener.of((u) => {
         if (u.docChanged) onChange(u.state.doc.toString());
+        // 打字机模式：文档变化时将光标所在行居中到视口
+        if (typewriter && u.docChanged) {
+          const line = u.state.doc.lineAt(u.state.selection.main.head);
+          u.view.dispatch({ effects: EditorView.scrollIntoView(line.from, { y: 'center' }) });
+        }
       }),
       ...extra
     ]

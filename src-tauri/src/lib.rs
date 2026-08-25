@@ -83,6 +83,38 @@ fn get_images_dir(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn list_images_dir(app: tauri::AppHandle) -> Result<Vec<HashMap<String, serde_json::Value>>, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let img_dir = dir.join("images");
+    if !img_dir.exists() {
+        return Ok(vec![]);
+    }
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(&img_dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let meta = entry.metadata().map_err(|e| e.to_string())?;
+        if meta.is_file() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let mut m = HashMap::new();
+            m.insert("name".into(), serde_json::Value::String(name));
+            m.insert("size".into(), serde_json::Value::Number(meta.len().into()));
+            out.push(m);
+        }
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+fn delete_file(path: String) -> Result<(), String> {
+    std::fs::remove_file(&path).map_err(|e| format!("删除失败：{e}"))
+}
+
+#[tauri::command]
+fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
+    std::fs::rename(&old_path, &new_path).map_err(|e| format!("重命名失败：{e}"))
+}
+
+#[tauri::command]
 fn write_binary_file(path: String, data_url: String) -> Result<(), String> {
     // 从 data URL 中提取 base64 数据并解码写入
     use base64::Engine;
@@ -547,6 +579,9 @@ pub fn run() {
             write_binary_file,
             read_binary_file,
             get_images_dir,
+            list_images_dir,
+            delete_file,
+            rename_file,
             open_file_dialog,
             save_file_dialog,
             http_request,

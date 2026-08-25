@@ -10,9 +10,9 @@ import type { Command, RenderHooks } from './plugins';
 import { ACCENTS, ICONS, rgba, lighten, darken } from './presets';
 import type { Doc, AppConfig, ViewMode } from './types';
 import type { Extension } from '@codemirror/state';
-import type { EditorView } from '@codemirror/view';
+import { EditorView } from '@codemirror/view';
 import { demoPlugin } from './demo-plugin';
-import { isTauri, getVersion, secureGet, secureSet, secureDelete, saveFileDialog, writeTextFile, dbInit, dbLoadState, dbSaveState, dbSearch, readBinaryFile, STORAGE_KEY } from './backend';
+import { isTauri, getVersion, secureGet, secureSet, secureDelete, saveFileDialog, writeTextFile, dbInit, dbLoadState, dbSaveState, dbSearch, readBinaryFile, listImagesDir, deleteFile, renameFile, STORAGE_KEY } from './backend';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import AiPanel from './AiPanel';
 import SettingsPanel from './SettingsPanel';
@@ -70,11 +70,12 @@ function BrandLogo({ iconId }: { iconId: string }) {
 /* ===== 编辑器 ===== */
 function EditorPane({ doc, extra }: { doc: Doc; extra: Extension[] }) {
   const updateDoc = useStore((s) => s.updateDoc);
+  const cfg = useStore((s) => s.cfg);
   const ref = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   useEffect(() => {
     if (!ref.current) return;
-    const view = createEditor(ref.current, doc.content, (v) => updateDoc(doc.id, { content: v }), extra);
+    const view = createEditor(ref.current, doc.content, (v) => updateDoc(doc.id, { content: v }), extra, cfg.typewriterMode);
     viewRef.current = view;
     editorViewRef.current = view;
     return () => { if (editorViewRef.current === view) editorViewRef.current = null; view.destroy(); viewRef.current = null; };
@@ -88,6 +89,12 @@ function EditorPane({ doc, extra }: { doc: Doc; extra: Extension[] }) {
     const cur = view.state.doc.toString();
     if (cur === doc.content) return;
     view.dispatch({ changes: { from: 0, to: cur.length, insert: doc.content } });
+    // 打字机模式：内容变化后将光标所在行居中
+    if (cfg.typewriterMode) {
+      const pos = view.state.selection.main.head;
+      const line = view.state.doc.lineAt(pos);
+      view.dispatch({ effects: EditorView.scrollIntoView(line.from, { y: 'center' }) });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.content]);
 
@@ -97,6 +104,7 @@ function EditorPane({ doc, extra }: { doc: Doc; extra: Extension[] }) {
 /* ===== 预览（所见即所得：可编辑文字、拖入图片、拖图移动、右键复制/移动/删除） ===== */
 function PreviewPane({ doc, hooks }: { doc: Doc; hooks: RenderHooks[] }) {
   const updateDoc = useStore((s) => s.updateDoc);
+  const updateDocWithUndo = useStore((s) => s.updateDocWithUndo);
   const ref = useRef<HTMLDivElement>(null);
   const skipRef = useRef(false);
   const timerRef = useRef<number | null>(null);
@@ -154,7 +162,7 @@ function PreviewPane({ doc, hooks }: { doc: Doc; hooks: RenderHooks[] }) {
       if (!md && doc.content) { console.warn('预览 → Markdown 转换结果为空，跳过同步'); return; }
       if (md !== doc.content) {
         skipRef.current = true;
-        updateDoc(doc.id, { content: md });
+        updateDocWithUndo(doc.id, { content: md });
       }
     } catch (e) { console.warn('预览同步失败:', e); }
   };
@@ -372,6 +380,146 @@ function TagPanel() {
           <button className="btn ghost sm" onClick={() => setFilterTag(null)}>清除筛选</button>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ===== 附件面板 ===== */
+function AttachmentsPanel() {
+  const docs = useStore((s) => s.docs);
+  const updateDoc = useStore((s) => s.updateDoc);
+  const [images, setImages] = useState<{ name: string; size: number; dataUrl?: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameVal, setRenameVal] = useState('');
+  const [imagesDir, setImagesDir] = useState('');
+
+  const loadImages = async () => {
+    setLoading(true);
+    try {
+      const dir = await getImagesDir();
+      setImagesDir(dir);
+      const list = await listImagesDir();
+      const withThumbs = await Promise.all(
+        list.map(async (img) => {
+          try {
+            const dataUrl = await readBinaryFile(dir + '/' + img.name);
+            return { ...img, dataUrl };
+          } catch {
+            return { ...img, dataUrl: undefined };
+          }
+        })
+      );
+      setImages(withThumbs);
+    } catch (e) {
+      console.error('加载附件失败:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadImages(); }, []);
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  const handleDelete = async (img: { name: string }) => {
+    if (!confirm(`确认删除附件「${img.name}」？\n引用此图片的文档中将显示为 [deleted]`)) return;
+    try {
+      const filePath = imagesDir + '/' + img.name;
+      await deleteFile(filePath);
+      // 更新所有引用此图片的文档
+      const allDocs = useStore.getState().docs;
+      for (const d of allDocs) {
+        if (!d.content) continue;
+        // 匹配 ![...](imagesDir/name) 和 ![](imagesDir/name)
+        const pattern = new RegExp(`!\\[[^\\]]*\\]\\([^)]*${img.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)`, 'g');
+        if (pattern.test(d.content)) {
+          updateDoc(d.id, { content: d.content.replace(pattern, '![deleted]') });
+        }
+      }
+      toast('已删除附件 ' + img.name, 'ok');
+      loadImages();
+    } catch (e) {
+      toast('删除失败：' + (e instanceof Error ? e.message : String(e)), 'err');
+    }
+  };
+
+  const handleRename = async (img: { name: string }) => {
+    if (!renameVal.trim() || renameVal === img.name) { setRenamingId(null); return; }
+    const newName = renameVal.trim();
+    try {
+      const oldPath = imagesDir + '/' + img.name;
+      const newPath = imagesDir + '/' + newName;
+      await renameFile(oldPath, newPath);
+      // 更新所有引用此图片的文档
+      const allDocs = useStore.getState().docs;
+      for (const d of allDocs) {
+        if (!d.content) continue;
+        if (d.content.includes(img.name)) {
+          updateDoc(d.id, { content: d.content.split(img.name).join(newName) });
+        }
+      }
+      toast('已重命名 ' + img.name + ' → ' + newName, 'ok');
+      setRenamingId(null);
+      loadImages();
+    } catch (e) {
+      toast('重命名失败：' + (e instanceof Error ? e.message : String(e)), 'err');
+    }
+  };
+
+  if (loading) {
+    return <div className="doc-empty"><p>加载中…</p></div>;
+  }
+
+  if (!images.length) {
+    return <div className="doc-empty"><p>暂无附件</p><span>在文档中拖入图片即可添加</span></div>;
+  }
+
+  return (
+    <div className="attachments-panel">
+      <div className="attachments-header">
+        <span className="attachments-count">{images.length} 个文件</span>
+        <button className="btn ghost sm" onClick={loadImages}>刷新</button>
+      </div>
+      <div className="attachments-grid">
+        {images.map((img) => (
+          <div key={img.name} className="attachment-item">
+            <div className="attachment-thumb">
+              {img.dataUrl ? (
+                <img src={img.dataUrl} alt={img.name} loading="lazy" />
+              ) : (
+                <div className="attachment-thumb-placeholder">🖼</div>
+              )}
+            </div>
+            <div className="attachment-info">
+              {renamingId === img.name ? (
+                <input
+                  className="search-input"
+                  value={renameVal}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleRename(img);
+                    if (e.key === 'Escape') setRenamingId(null);
+                  }}
+                  onChange={(e) => setRenameVal(e.target.value)}
+                  onBlur={() => handleRename(img)}
+                />
+              ) : (
+                <div className="attachment-name" title={img.name}>{img.name}</div>
+              )}
+              <div className="attachment-size">{formatSize(img.size)}</div>
+            </div>
+            <div className="attachment-actions">
+              <button className="btn ghost sm" title="重命名" onClick={() => { setRenamingId(img.name); setRenameVal(img.name); }}>✎</button>
+              <button className="btn ghost sm" title="删除" onClick={() => handleDelete(img)}>🗑</button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -619,6 +767,7 @@ function Topbar({ commands, onNew, onCycleView, onToggleSidebar, onOpenAi, onOpe
         <button className="btn ghost" onClick={() => useStore.getState().redo()} title="重做 Ctrl+Shift+Z">↷</button>
         <button className="btn ghost" onClick={() => setCfg({ theme: cfg.theme === 'dark' ? 'light' : 'dark' })}>{resolveTheme(cfg) === 'dark' ? '☀' : '🌙'}</button>
         <button className="btn ghost" onClick={() => setCfg({ focusMode: !cfg.focusMode })} title={cfg.focusMode ? '退出专注模式' : '专注模式'}>{cfg.focusMode ? '✕ 专注' : '🖥 专注'}</button>
+        <button className="btn ghost" onClick={() => setCfg({ typewriterMode: !cfg.typewriterMode })} title={cfg.typewriterMode ? '关闭打字机' : '打字机模式'}>{cfg.typewriterMode ? '⌨' : '📖'}</button>
         <button className="btn ghost" onClick={onOpenSettings}>⚙ 设置</button>
         <button className="btn ghost" onClick={onOpenHelp} title="使用说明">❓</button>
         <button className="btn ghost" onClick={() => setOpenCmd(!openCmd)}>⌘</button>
@@ -716,6 +865,10 @@ export default function App() {
         // 首次启动或数据为空：内置「使用说明」文档
         if (useStore.getState().docs.length === 0) {
           useStore.getState().createDoc('使用说明.md', HELP_DOC);
+        } else {
+          // 有数据但缺少使用说明：补创建（覆盖安装后可能被清掉）
+          const hasHelp = useStore.getState().docs.some((d) => d.name === '使用说明.md');
+          if (!hasHelp) useStore.getState().createDoc('使用说明.md', HELP_DOC);
         }
       } catch (e) {
         console.error('初始化失败:', e);
@@ -770,6 +923,8 @@ export default function App() {
   useEffect(() => { applyTheme(cfg); }, [cfg]);
 
   // 持久化（防抖）：SQLite（Tauri）或 localStorage（浏览器）；密钥与密码只存系统钥匙串
+  // 增量优化：记录文档内容 hash，仅变化时才发送 FTS 数据避免无谓重建
+  const lastSavedHash = useRef('');
   useEffect(() => {
     const t = setTimeout(() => {
       const s = useStore.getState();
@@ -778,19 +933,24 @@ export default function App() {
       const { password: _pwd, ...syncSafe } = s.cfg.sync;
       const cfgSafe = { ...s.cfg, ai: aiSafe, sync: syncSafe };
       const stateJson = JSON.stringify({ docs: s.docs, trash: s.trash, activeId: s.activeId, cfg: cfgSafe });
-      const docsJson = JSON.stringify(s.docs.map((d) => ({
-        id: d.id,
-        name: d.name,
-        content: (d.content || '').replace(/!\[[^\]]*\]\(data:[^)]*\)/g, '![](data:image-omitted)'),
-      })));
+      const contentHash = s.docs.map((d) => d.id + ':' + (d.content?.length || 0)).join(',');
+      const needsFts = contentHash !== lastSavedHash.current;
+      const docsJson = needsFts
+        ? JSON.stringify(s.docs.map((d) => ({
+            id: d.id,
+            name: d.name,
+            content: (d.content || '').replace(/!\[[^\]]*\]\(data:[^)]*\)/g, '![](data:image-omitted)'),
+          })))
+        : '';
+      if (needsFts) lastSavedHash.current = contentHash;
       dbSaveState(stateJson, docsJson)
         .then(() => {
-          useStore.getState().setSaveStatus('saved');
+          s.setSaveStatus('saved');
           setTimeout(() => {
             if (useStore.getState().saveStatus === 'saved') useStore.getState().setSaveStatus('idle');
           }, 1500);
         })
-        .catch(() => { useStore.getState().setSaveStatus('error'); });
+        .catch(() => { s.setSaveStatus('error'); });
     }, 500);
     return () => clearTimeout(t);
   }, [docs, activeId, cfg]);
@@ -882,17 +1042,17 @@ export default function App() {
         <aside className={'sidebar' + (sidebarCollapsed || cfg.focusMode ? ' collapsed' : '')}>
           <div className="sidebar-head">
             <div className="sidebar-tabs">
-              {(['docs', 'outline', 'tags', 'trash'] as const).map((t) => (
+              {(['docs', 'outline', 'tags', 'trash', 'attachments'] as const).map((t) => (
                 <button key={t} className={'sidebar-tab' + (sidebarTab === t ? ' active' : '')}
-                  title={t === 'docs' ? '文档' : t === 'outline' ? '大纲' : t === 'tags' ? '标签' : '回收站'}
+                  title={t === 'docs' ? '文档' : t === 'outline' ? '大纲' : t === 'tags' ? '标签' : t === 'trash' ? '回收站' : '附件'}
                   onClick={() => { setSidebarTab(t); if (sidebarCollapsed) setSidebarCollapsed(false); }}>
-                  <span className="tab-ico">{t === 'docs' ? '📄' : t === 'outline' ? '☰' : t === 'tags' ? '🏷' : '🗑'}</span>
-                  {!sidebarCollapsed && <span className="tab-label">{t === 'docs' ? '文档' : t === 'outline' ? '大纲' : t === 'tags' ? '标签' : '回收站'}</span>}
+                  <span className="tab-ico">{t === 'docs' ? '📄' : t === 'outline' ? '☰' : t === 'tags' ? '🏷' : t === 'trash' ? '🗑' : '📎'}</span>
+                  {!sidebarCollapsed && <span className="tab-label">{t === 'docs' ? '文档' : t === 'outline' ? '大纲' : t === 'tags' ? '标签' : t === 'trash' ? '回收站' : '附件'}</span>}
                 </button>
               ))}
             </div>
           </div>
-          {!sidebarCollapsed && (sidebarTab === 'docs' ? <DocTree /> : sidebarTab === 'outline' ? <OutlineList /> : sidebarTab === 'tags' ? <TagPanel /> : <TrashList />)}
+          {!sidebarCollapsed && (sidebarTab === 'docs' ? <DocTree /> : sidebarTab === 'outline' ? <OutlineList /> : sidebarTab === 'tags' ? <TagPanel /> : sidebarTab === 'attachments' ? <AttachmentsPanel /> : <TrashList />)}
         </aside>
         <div className="editor-shell">
           <div className="view-tabs">
@@ -901,11 +1061,15 @@ export default function App() {
             <button className={'tab' + (viewMode === 'preview' ? ' active' : '')} onClick={() => setCfg({ viewMode: 'preview' })}>预览</button>
           </div>
           <div className="editor-panes">
-            {(viewMode === 'edit' || viewMode === 'split') && active && (
-              <div className="pane pane-edit"><EditorPane doc={active} extra={editorExts} /></div>
-            )}
-            {(viewMode === 'preview' || viewMode === 'split') && active && (
-              <div className="pane pane-preview"><PreviewPane doc={active} hooks={renderHooks} /></div>
+            {active && (
+              <>
+                <div className={'pane pane-edit' + (viewMode === 'preview' ? ' hidden' : '')}>
+                  <EditorPane doc={active} extra={editorExts} />
+                </div>
+                <div className={'pane pane-preview' + (viewMode === 'edit' ? ' hidden' : '')}>
+                  <PreviewPane doc={active} hooks={renderHooks} />
+                </div>
+              </>
             )}
             {!active && <div className="pane pane-empty">新建或选择一篇文档</div>}
           </div>

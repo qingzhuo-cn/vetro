@@ -61,6 +61,8 @@ export interface AppConfig {
   sync: SyncConfig;
   /** 专注模式：隐藏顶栏/侧栏/状态栏 */
   focusMode: boolean;
+  /** 打字机模式：光标所在行始终保持在视口中央 */
+  typewriterMode: boolean;
 }
 
 export function defaultConfig(): AppConfig {
@@ -75,6 +77,7 @@ export function defaultConfig(): AppConfig {
     ai: { endpoint: '', key: '', model: 'deepseek-chat', ok: false },
     sync: { enabled: false, url: '', username: '', password: '' },
     focusMode: false,
+    typewriterMode: false,
   };
 }
 

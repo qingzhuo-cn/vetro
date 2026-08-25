@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { Doc, TrashItem, AppConfig } from './types';
 import { defaultConfig, uid } from './types';
 
-export type SidebarTab = 'docs' | 'outline' | 'trash' | 'tags';
+export type SidebarTab = 'docs' | 'outline' | 'trash' | 'tags' | 'attachments';
 
 export interface PersistedState {
   docs?: Doc[];

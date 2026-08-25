@@ -38,7 +38,7 @@ export interface SearchHit {
 export function getVersion(): Promise<string> {
   if (isTauri) return invoke<string>('get_version');
   // 浏览器开发态 / 鸿蒙 H5 壳的回退版本号，需与 package.json 保持一致
-  return Promise.resolve('2.4.3');
+  return Promise.resolve('2.5.0');
 }
 
 /* ===== 浏览器端加密密码管理（IndexedDB 存储） ===== */
@@ -149,6 +149,29 @@ export async function getImagesDir(): Promise<string> {
   if (b) return b.getImagesDir?.() || 'images';
   if (isTauri) return invoke<string>('get_images_dir');
   return 'vetro-images';
+}
+
+export async function listImagesDir(): Promise<{ name: string; size: number }[]> {
+  const b = bridge();
+  if (b) return b.listImagesDir?.() ?? [];
+  if (isTauri) return invoke<{ name: string; size: number }[]>('list_images_dir');
+  // 浏览器：从 IndexedDB 列出
+  // (简化实现：返回空数组，浏览器态暂不支持)
+  return [];
+}
+
+export async function deleteFile(path: string): Promise<void> {
+  const b = bridge();
+  if (b) { b.deleteFile?.(path); return; }
+  if (isTauri) { await invoke('delete_file', { path }); return; }
+  throw new Error('浏览器环境不支持文件删除');
+}
+
+export async function renameFile(oldPath: string, newPath: string): Promise<void> {
+  const b = bridge();
+  if (b) { b.renameFile?.(oldPath, newPath); return; }
+  if (isTauri) { await invoke('rename_file', { oldPath, newPath }); return; }
+  throw new Error('浏览器环境不支持文件重命名');
 }
 
 /** 写入二进制文件（图片等），dataUrl 为 base64 data URL */

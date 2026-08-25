@@ -192,6 +192,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .pane-edit { border-right: 1px solid var(--glass-border); }
 .pane-preview { overflow-y: auto; padding: 24px 36px; }
 .pane-empty { flex: 1; display: grid; place-items: center; color: var(--fg-3); }
+.pane.hidden { display: none; }
 .editor-host { flex: 1; min-height: 0; }
 .editor-host .cm-editor { height: 100%; font-size: var(--editor-fs, 15px); }
 .editor-host .cm-editor.cm-focused { outline: none; }
