@@ -84,12 +84,12 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .brand { display: flex; align-items: center; gap: 12px; margin-right: auto; }
 .brand-logo { width: 34px; height: 34px; }
 .brand-name { font-weight: 700; font-size: 14px; }
-.topbar-actions { display: flex; align-items: center; gap: 8px; }
+.topbar-actions { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; }
 
 .btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 14px; border-radius: 12px;
-  font-size: 13px; font-weight: 500; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 10px; border-radius: 10px;
+  font-size: 12px; font-weight: 500; white-space: nowrap;
   transition: transform var(--dur) var(--ease-spring), box-shadow var(--dur), background-color var(--dur-fast), color var(--dur-fast);
 }
 .btn:active { transform: translateY(1px) scale(0.97); }
@@ -133,25 +133,28 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 }
 .sidebar.collapsed { width: 54px; }
 .sidebar-head { padding: 12px 12px 8px; }
-.sidebar-tabs { display: flex; gap: 4px; background: var(--bg-1); padding: 3px; border-radius: 10px; border: 1px solid var(--glass-border); }
+.sidebar-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; background: var(--bg-1); padding: 3px; border-radius: 10px; border: 1px solid var(--glass-border); }
 .sidebar-tab {
-  flex: 1; padding: 5px 10px; border-radius: 7px; font-size: 12px; color: var(--fg-2);
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap;
-  transition: color var(--dur-fast), background-color var(--dur-fast);
+  padding: 4px 0; border-radius: 7px; font-size: 11px; color: var(--fg-2);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  transition: color var(--dur-fast), background-color var(--dur-fast); cursor: pointer;
 }
 .sidebar-tab:hover { color: var(--fg-0); }
 .sidebar-tab.active { background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
-.tab-ico { font-size: 13px; line-height: 1; }
-.sidebar-tab.active .tab-ico { filter: none; }
+.tab-ico { font-size: 14px; line-height: 1; }
+.tab-label { font-size: 9px; line-height: 1.1; }
 
-/* 收起状态：窄栏，标签从上到下排列 */
-.sidebar.collapsed .sidebar-head { padding: 10px 8px; }
-.sidebar.collapsed .sidebar-tabs { flex-direction: column; align-items: stretch; padding: 4px; border-radius: 12px; }
-.sidebar.collapsed .sidebar-tab { flex: 0 0 auto; padding: 10px 0; }
+/* 收起状态：窄栏，只显示图标 */
+.sidebar.collapsed .sidebar-head { padding: 10px 6px; }
+.sidebar.collapsed .sidebar-tabs { flex-direction: column; align-items: stretch; padding: 4px; border-radius: 12px; gap: 2px; }
+.sidebar.collapsed .sidebar-tab { flex: 0 0 auto; padding: 8px 0; }
 .sidebar.collapsed .tab-label { display: none; }
 .sidebar.collapsed .doc-list,
 .sidebar.collapsed .outline-list,
-.sidebar.collapsed .doc-empty { display: none; }
+.sidebar.collapsed .tag-panel,
+.sidebar.collapsed .doc-empty,
+.sidebar.collapsed .trash-list,
+.sidebar.collapsed .attachment-list { display: none; }
 
 .doc-list { flex: 1; overflow-y: auto; padding: 0 8px; }
 .doc-empty { padding: 34px 10px; text-align: center; color: var(--fg-3); font-size: 12px; }
