@@ -17,8 +17,11 @@ export const previewElRef: { current: HTMLElement | null } = { current: null };
 
 export function renderMarkdown(md: string, hooks: RenderHooks[] = []): string {
   // 预处理 [[wiki-link]] → <a class="wiki-link" data-wiki="目标文档名">目标文档名</a>
+  // 完整 HTML 转义防注入：对 < > & ' " 全部转义
+  const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const escapeText = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   let processed = (md || '').replace(/\[\[([^\]]+)\]\]/g, (_m, name: string) =>
-    `<a class="wiki-link" data-wiki="${name.replace(/"/g, '&quot;')}">${name}</a>`
+    `<a class="wiki-link" data-wiki="${escapeAttr(name)}">${escapeText(name)}</a>`
   );
   let html: string;
   try {

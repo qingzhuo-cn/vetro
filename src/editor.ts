@@ -63,7 +63,7 @@ function insertImageFile(view: EditorView, file: File) {
         view.dispatch({ changes: { from, to, insert: md }, selection: { anchor: from + md.length } });
       })
     )
-  ).catch(() => {});
+  ).catch((e) => console.warn('[editor: insert-image]', e));
 }
 
 /* 粘贴图片 → 插入 Markdown */

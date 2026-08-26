@@ -93,7 +93,7 @@ export function loadExternalImages(root: Element): void {
     if (src && !src.startsWith('data:') && !src.startsWith('http') && !src.startsWith('blob:')) {
       readBinaryFile(src)
         .then((dataUrl) => { if (dataUrl) img.src = dataUrl; })
-        .catch(() => {});
+        .catch((e) => console.warn('[loadExternalImage]', src, e));
     }
   });
 }

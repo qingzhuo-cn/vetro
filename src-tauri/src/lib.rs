@@ -104,18 +104,47 @@ fn list_images_dir(app: tauri::AppHandle) -> Result<Vec<HashMap<String, serde_js
     Ok(out)
 }
 
+/// 校验文件路径：必须在 app data 目录内，且仅允许图片文件
+fn validate_file_path(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
+    use std::path::Path;
+    let path_buf = Path::new(path).canonicalize().map_err(|e| format!("路径解析失败：{e}"))?;
+    
+    // 1. 必须在 app data 目录内（防止目录穿越）
+    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let app_data_canonical = app_data.canonicalize().unwrap_or(app_data);
+    if !path_buf.starts_with(&app_data_canonical) {
+        return Err("仅允许操作应用数据目录内的文件".into());
+    }
+    
+    // 2. 仅允许图片文件扩展名
+    let ext = path_buf.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    const ALLOWED: [&str; 6] = ["png", "jpg", "jpeg", "webp", "gif", "svg"];
+    if !ALLOWED.contains(&ext.as_str()) {
+        return Err(format!("仅允许操作图片文件，不支持 .{ext}"));
+    }
+    
+    Ok(())
+}
+
 #[tauri::command]
-fn delete_file(path: String) -> Result<(), String> {
+fn delete_file(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    validate_file_path(&app, &path)?;
     std::fs::remove_file(&path).map_err(|e| format!("删除失败：{e}"))
 }
 
 #[tauri::command]
-fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
+fn rename_file(app: tauri::AppHandle, old_path: String, new_path: String) -> Result<(), String> {
+    validate_file_path(&app, &old_path)?;
+    validate_file_path(&app, &new_path)?;
     std::fs::rename(&old_path, &new_path).map_err(|e| format!("重命名失败：{e}"))
 }
 
 #[tauri::command]
-fn write_binary_file(path: String, data_url: String) -> Result<(), String> {
+fn write_binary_file(app: tauri::AppHandle, path: String, data_url: String) -> Result<(), String> {
+    validate_file_path(&app, &path)?;
     // 从 data URL 中提取 base64 数据并解码写入
     use base64::Engine;
     let parts: Vec<&str> = data_url.splitn(2, ',').collect();
@@ -124,13 +153,6 @@ fn write_binary_file(path: String, data_url: String) -> Result<(), String> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(b64)
         .map_err(|e| format!("Base64 解码失败：{e}"))?;
-    // 校验扩展名：仅允许图片文件
-    let ext = std::path::Path::new(&path)
-        .extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).unwrap_or_default();
-    const ALLOWED: [&str; 6] = ["png", "jpg", "jpeg", "webp", "gif", "svg"];
-    if !ALLOWED.contains(&ext.as_str()) {
-        return Err(format!("仅允许写入图片文件（.{ext}）"));
-    }
     // 确保父目录存在
     if let Some(parent) = std::path::Path::new(&path).parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -139,7 +161,8 @@ fn write_binary_file(path: String, data_url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn read_binary_file(path: String) -> Result<String, String> {
+fn read_binary_file(app: tauri::AppHandle, path: String) -> Result<String, String> {
+    validate_file_path(&app, &path)?;
     let bytes = std::fs::read(&path).map_err(|e| format!("读取失败：{e}"))?;
     use base64::Engine;
     let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
@@ -193,7 +216,7 @@ fn save_file_dialog(app: tauri::AppHandle, default_name: Option<String>) -> Resu
 /* ===== HTTP 代理（绕过 CORS，用于 AI / WebDAV / 更新检查） ===== */
 
 /// 出站请求校验：仅放行 http/https；阻断云元数据链路本地段（169.254.0.0/16、fe80::/10），
-/// 防止前端被注入后借此探测/窃取实例凭据。局域网地址（NAS WebDAV、本机 LLM 服务）保留可用。
+/// 阻断 loopback（127.0.0.1/::1），防止前端被注入后借此探测/窃取实例凭据。
 fn validate_outbound_url(raw: &str) -> Result<url::Url, String> {
     let u = url::Url::parse(raw.trim()).map_err(|e| format!("非法 URL：{e}"))?;
     match u.scheme() {
@@ -204,20 +227,25 @@ fn validate_outbound_url(raw: &str) -> Result<url::Url, String> {
     if host.is_empty() {
         return Err("URL 缺少主机名".into());
     }
+    // 阻止常见本地/回环地址字符串
+    let host_lower = host.to_ascii_lowercase();
+    const BLOCKED_HOSTS: [&str; 8] = ["localhost", "127.0.0.1", "0.0.0.0", "::1", "::0", "[::1]", "[::0]", "metadata.google.internal"];
+    if BLOCKED_HOSTS.contains(&host_lower.as_str()) {
+        return Err("禁止访问本地/回环地址".into());
+    }
     let blocked = match u.host() {
-        Some(url::Host::Ipv4(v4)) => v4.is_link_local() || v4.is_broadcast(),
+        Some(url::Host::Ipv4(v4)) => v4.is_loopback() || v4.is_link_local() || v4.is_broadcast() || v4.is_unspecified(),
         Some(url::Host::Ipv6(v6)) => {
-            // IPv4-mapped IPv6（::ffff:169.254.x.x）需还原为 v4 再判，否则可绕过元数据拦截
             if let Some(v4) = v6.to_ipv4_mapped() {
-                v4.is_link_local() || v4.is_broadcast()
+                v4.is_loopback() || v4.is_link_local() || v4.is_broadcast() || v4.is_unspecified()
             } else {
-                (v6.segments()[0] & 0xffc0) == 0xfe80 // fe80::/10 链路本地
+                v6.is_loopback() || (v6.segments()[0] & 0xffc0) == 0xfe80
             }
         }
-        _ => false, // 域名：由系统解析，这里不做 DNS 级拦截
+        _ => false,
     };
     if blocked {
-        return Err("禁止访问链路本地/元数据地址".into());
+        return Err("禁止访问本地/回环/链路本地/元数据地址".into());
     }
     Ok(u)
 }
@@ -241,6 +269,9 @@ struct HttpResponse {
     body: String,
 }
 
+/// 最大响应体大小：16MB，防止 OOM
+const MAX_RESPONSE_BODY: usize = 16 * 1024 * 1024;
+
 #[tauri::command]
 async fn http_request(req: HttpRequest) -> Result<HttpResponse, String> {
     use reqwest::header::{HeaderName, HeaderValue};
@@ -250,9 +281,9 @@ async fn http_request(req: HttpRequest) -> Result<HttpResponse, String> {
         .map_err(|e| format!("非法 HTTP 方法：{e}"))?;
 
     let mut builder = reqwest::Client::builder();
-    if let Some(t) = req.timeout_secs {
-        builder = builder.timeout(std::time::Duration::from_secs(t.max(1)));
-    }
+    // 默认超时 30 秒
+    let timeout = std::time::Duration::from_secs(req.timeout_secs.unwrap_or(30).clamp(1, 300));
+    builder = builder.timeout(timeout);
     let client = builder.build().map_err(|e| e.to_string())?;
 
     let mut rb = client.request(method, url);
@@ -276,6 +307,9 @@ async fn http_request(req: HttpRequest) -> Result<HttpResponse, String> {
         .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
         .collect();
     let body = res.text().await.map_err(|e| e.to_string())?;
+    if body.len() > MAX_RESPONSE_BODY {
+        return Err(format!("响应体超出大小限制（{}MB）", MAX_RESPONSE_BODY / 1024 / 1024));
+    }
     Ok(HttpResponse { status, headers, body })
 }
 
@@ -289,7 +323,12 @@ async fn ai_stream(req: HttpRequest, on_chunk: tauri::ipc::Channel<String>) -> R
     let url = validate_outbound_url(&req.url)?;
     let method = reqwest::Method::from_bytes(req.method.as_bytes())
         .map_err(|e| format!("非法 HTTP 方法：{e}"))?;
-    let client = reqwest::Client::new();
+    // AI 流式默认超时 120 秒，允许调用方自定义（上限 600 秒）
+    let timeout = std::time::Duration::from_secs(req.timeout_secs.unwrap_or(120).clamp(1, 600));
+    let client = reqwest::Client::builder()
+        .timeout(timeout)
+        .build()
+        .map_err(|e| e.to_string())?;
     let mut rb = client.request(method, url);
     for (k, v) in &req.headers {
         if let (Ok(name), Ok(value)) = (

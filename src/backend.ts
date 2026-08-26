@@ -10,8 +10,27 @@ export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in
  * 契约：dbInit/dbSave/dbLoad/dbSearch、secureSet/Get/Delete、httpRequest、saveFile/writeFile/readFile/openFile。
  * 存在时优先走原生桥（SQLite / 钥匙串 / 网络无 CORS 限制）。
  */
-function bridge(): any {
-  return typeof window !== 'undefined' ? (window as any).vetroNative ?? null : null;
+interface VetroNative {
+  dbInit: () => Promise<void>;
+  dbSave: (state: string, docs: string) => Promise<void>;
+  dbLoad: () => Promise<string | null>;
+  dbSearch: (q: string, limit: number) => Promise<string[]>;
+  secureSet: (k: string, v: string) => Promise<void>;
+  secureGet: (k: string) => Promise<string | null>;
+  secureDelete: (k: string) => Promise<void>;
+  httpRequest: (req: HttpRequest) => Promise<HttpResponse>;
+  writeFile: (path: string, content: string) => Promise<void>;
+  readFile: (path: string) => Promise<string>;
+  openFile: (ext?: string) => Promise<string | null>;
+  saveFile: (name?: string) => Promise<string | null>;
+  getImagesDir: () => Promise<string>;
+  listImagesDir: () => Promise<{ name: string; size: number }[]>;
+  deleteFile: (path: string) => Promise<void>;
+  renameFile: (oldPath: string, newPath: string) => Promise<void>;
+}
+function bridge(): VetroNative | null {
+  const w = window as unknown as Record<string, unknown>;
+  return (w.vetroNative as VetroNative) ?? null;
 }
 
 export interface HttpRequest {
@@ -217,7 +236,7 @@ export async function saveFileDialog(defaultName?: string): Promise<string | nul
 /* ===== HTTP 代理（Tauri reqwest / 鸿蒙桥 / fetch 兜底） ===== */
 export async function httpRequest(req: HttpRequest): Promise<HttpResponse> {
   const b = bridge();
-  if (b) return b.httpRequest(req) as HttpResponse;
+  if (b) return await b.httpRequest(req);
   if (isTauri) return invoke<HttpResponse>('http_request', { req });
   // 浏览器回退：直接 fetch（受 CORS 限制，仅用于开发调试）
   const res = await fetch(req.url, {
@@ -259,7 +278,7 @@ export async function dbSaveState(stateJson: string, docsJson: string): Promise<
 
 export async function dbSearch(query: string): Promise<SearchHit[]> {
   const b = bridge();
-  if (b) { const v = b.dbSearch(query); return Array.isArray(v) ? v : []; }
+  if (b) { const v = await b.dbSearch(query, 20); return Array.isArray(v) ? v.map((s) => ({ id: s, name: '', snippet: '' })) : []; }
   if (isTauri) return invoke<SearchHit[]>('db_search', { query });
   // 浏览器回退：对 localStorage 里的文档做朴素包含匹配
   const q = query.trim().toLowerCase();

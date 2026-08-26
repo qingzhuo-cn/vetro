@@ -8,6 +8,7 @@ import { createEditor, editorViewRef, jumpToLine } from './editor';
 import { PluginManager } from './plugins';
 import type { Command, RenderHooks } from './plugins';
 import { ACCENTS, ICONS, rgba, lighten, darken } from './presets';
+import { ErrorBoundary } from './ErrorBoundary';
 import type { Doc, AppConfig, ViewMode } from './types';
 import type { Extension } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
@@ -230,9 +231,8 @@ function PreviewPane({ doc, hooks }: { doc: Doc; hooks: RenderHooks[] }) {
       img.alt = file.name.replace(/\.[^.]+$/, '');
       placeNodeAt(e.clientX, e.clientY, img);
       syncFromPreview();
-    }).catch(() => {});
+    }).catch((e) => console.warn('[paste-image]', e));
   };
-
   // 图片拖拽：移动（剪切到目标位置，不复制）
   const onDragStart = (e: React.DragEvent) => {
     const t = e.target as HTMLElement;
@@ -897,15 +897,15 @@ export default function App() {
   useEffect(() => {
     if (!keyLoaded.current) return;
     const key = cfg.ai.key;
-    if (key) secureSet('ai-key', key).catch(() => {});
-    else secureDelete('ai-key').catch(() => {});
+    if (key) secureSet('ai-key', key).catch((e) => console.warn('[secureSet ai-key]', e));
+    else secureDelete('ai-key').catch((e) => console.warn('[secureDelete ai-key]', e));
   }, [cfg.ai.key]);
 
   useEffect(() => {
     if (!keyLoaded.current) return;
     const pwd = cfg.sync.password;
-    if (pwd) secureSet('sync-password', pwd).catch(() => {});
-    else secureDelete('sync-password').catch(() => {});
+    if (pwd) secureSet('sync-password', pwd).catch((e) => console.warn('[secureSet sync-pwd]', e));
+    else secureDelete('sync-password').catch((e) => console.warn('[secureDelete sync-pwd]', e));
   }, [cfg.sync.password]);
 
   // toast 注入
