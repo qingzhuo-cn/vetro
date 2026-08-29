@@ -112,11 +112,24 @@ function sanitizeConfig(input: Partial<AppConfig> | undefined): AppConfig {
     icon: typeof raw.icon === 'string' ? raw.icon : defaults.icon,
     customThemes: Array.isArray(raw.customThemes) ? raw.customThemes.filter((theme): theme is AppConfig['customThemes'][number] => !!theme && typeof theme === 'object' && typeof (theme as { id?: unknown }).id === 'string') : [],
     ai: {
+      name: typeof aiRaw.name === 'string' ? aiRaw.name.slice(0, 30) : '',
       endpoint: typeof aiRaw.endpoint === 'string' ? aiRaw.endpoint : defaults.ai.endpoint,
       key: '',
       model: typeof aiRaw.model === 'string' && aiRaw.model ? aiRaw.model : defaults.ai.model,
       ok: aiRaw.ok === true,
     },
+    aiProviders: Array.isArray(raw.aiProviders)
+      ? raw.aiProviders
+          .filter((p): p is Record<string, unknown> => !!p && typeof p === 'object')
+          .map((p) => ({
+            id: typeof p.id === 'string' && p.id ? p.id : uid(),
+            name: typeof p.name === 'string' && p.name ? p.name.slice(0, 30) : '平台',
+            endpoint: typeof p.endpoint === 'string' ? p.endpoint : '',
+            model: typeof p.model === 'string' ? p.model : '',
+          }))
+          .filter((p) => p.endpoint)
+          .slice(0, 20)
+      : [],
     sync: {
       enabled: syncRaw.enabled === true,
       url: typeof syncRaw.url === 'string' ? syncRaw.url : defaults.sync.url,

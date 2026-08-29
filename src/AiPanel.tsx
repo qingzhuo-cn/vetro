@@ -11,7 +11,9 @@ import {
   isAbortError,
 } from './ai';
 import type { AiPresetId, AiPromptContext, ChatMessage } from './ai';
-import type { AiConfig } from './types';
+import type { AiConfig, AiProviderPreset } from './types';
+import { AI_PLATFORM_PRESETS, uid } from './types';
+import { secureGet, secureSet, secureDelete } from './backend';
 
 type ApplyMode = 'selection' | 'cursor' | 'document';
 type MessageStatus = 'pending' | 'streaming' | 'done' | 'error' | 'cancelled';
@@ -32,7 +34,7 @@ interface PanelMessage extends ChatMessage {
   applyError?: string;
 }
 
-const WELCOME = '你好，我是 Vetro 的 AI 助手。先在「设置」里填写接口地址与密钥，再点「获取模型」。';
+const WELCOME = '你好，我是 Vetro 的 AI 助手。在「设置」里选择平台预设并填写密钥，可保存多个平台随时切换；选中文字后可用快捷动作处理选区。';
 
 function captureContext(applyMode: ApplyMode = 'document'): CapturedContext {
   const state = useStore.getState();
@@ -75,6 +77,10 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
   const docs = useStore((s) => s.docs);
   const activeId = useStore((s) => s.activeId);
   const ai = cfg.ai;
+  const providers = cfg.aiProviders;
+
+  // 当前激活平台在保存列表中的 id（endpoint+model 匹配）
+  const activeSavedId = providers.find((p) => p.endpoint === ai.endpoint && p.model === ai.model)?.id ?? null;
 
   const [messages, setMessages] = useState<PanelMessage[]>([
     { id: 1, role: 'assistant', content: WELCOME, status: 'done' },
@@ -85,6 +91,7 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
   const [showSettings, setShowSettings] = useState(!ai.ok);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const nextMessageId = useRef(2);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -110,6 +117,55 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
   const set = (patch: Partial<AiConfig>) => setCfg({ ai: { ...ai, ...patch } });
 
   const cancel = () => abortRef.current?.abort();
+
+  /* ===== 多平台管理 ===== */
+  // 从内置预设一键填入（不覆盖已有地址对应的平台名）
+  const applyPlatformPreset = (presetId: string) => {
+    const preset = AI_PLATFORM_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    const sameEndpoint = providers.find((p) => p.endpoint === preset.endpoint);
+    set({
+      name: sameEndpoint?.name ?? preset.name,
+      endpoint: preset.endpoint,
+      model: sameEndpoint?.model ?? preset.model,
+    });
+  };
+
+  // 自定义第三方平台：清空表单自由填写任意 OpenAI 兼容接口
+  const applyCustomPlatform = () => {
+    set({ name: '', endpoint: '', model: '' });
+    setModels([]);
+    setTimeout(() => nameInputRef.current?.focus(), 60);
+  };
+
+  // 切换到已保存的平台：从钥匙串读取该平台独立密钥
+  const switchProvider = async (p: AiProviderPreset) => {
+    if (busy) return;
+    let key = '';
+    try { key = (await secureGet('ai-key-' + p.id)) ?? ''; } catch { /* 钥匙串不可用时留空 */ }
+    set({ name: p.name, endpoint: p.endpoint, model: p.model, key, ok: false });
+    setModels([]);
+  };
+
+  // 保存当前配置为平台（endpoint+model 相同视为同一平台，更新而非新建）
+  const saveProvider = async () => {
+    if (!ai.endpoint.trim()) return;
+    const name = (ai.name || AI_PLATFORM_PRESETS.find((p) => p.endpoint === ai.endpoint)?.name || '自定义平台').trim().slice(0, 30);
+    const existing = providers.find((p) => p.endpoint === ai.endpoint);
+    const entry: AiProviderPreset = existing
+      ? { ...existing, name, model: ai.model }
+      : { id: uid(), name, endpoint: ai.endpoint.trim(), model: ai.model };
+    const next = existing
+      ? providers.map((p) => (p.id === existing.id ? entry : p))
+      : [...providers, entry].slice(-20);
+    setCfg({ aiProviders: next, ai: { ...ai, name } });
+    try { await secureSet('ai-key-' + entry.id, ai.key); } catch (e) { console.warn('[ai] 保存密钥失败', e); }
+  };
+
+  const removeProvider = async (id: string) => {
+    setCfg({ aiProviders: providers.filter((p) => p.id !== id) });
+    try { await secureDelete('ai-key-' + id); } catch { /* 忽略 */ }
+  };
 
   const loadModels = async () => {
     if (busy) return;
@@ -282,14 +338,67 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
 
         {showSettings ? (
           <div className="ai-settings">
+            <div className="ai-field">
+              <span>平台预设</span>
+              <div className="ai-platforms" role="group" aria-label="内置平台预设">
+                {AI_PLATFORM_PRESETS.map((p) => (
+                  <button
+                    type="button"
+                    key={p.id}
+                    className={'ai-platform-chip' + (ai.endpoint === p.endpoint ? ' active' : '')}
+                    aria-pressed={ai.endpoint === p.endpoint}
+                    onClick={() => applyPlatformPreset(p.id)}
+                  >{p.name}</button>
+                ))}
+                <button
+                  type="button"
+                  className={'ai-platform-chip custom' + (!ai.endpoint ? ' active' : '')}
+                  aria-pressed={!ai.endpoint}
+                  title="填入任意 OpenAI 兼容的第三方接口"
+                  onClick={applyCustomPlatform}
+                >➕ 自定义</button>
+              </div>
+              <p className="ai-field-hint">任何 OpenAI 兼容接口均可接入（中转站、自建网关、本地服务都行），填好后点「保存为平台」即可留存切换。</p>
+            </div>
+
+            {providers.length > 0 && (
+              <div className="ai-field">
+                <span>已保存的平台（点击切换）</span>
+                <div className="ai-saved-list" role="list" aria-label="已保存的 AI 平台">
+                  {providers.map((p) => (
+                    <div key={p.id} role="listitem" className={'ai-saved-item' + (p.id === activeSavedId ? ' active' : '')}>
+                      <button type="button" className="ai-saved-name" title={`${p.name} · ${p.model}`}
+                        onClick={() => void switchProvider(p)}>
+                        <span className="ai-saved-label">{p.name}</span>
+                        <span className="ai-saved-model">{p.model || p.endpoint}</span>
+                      </button>
+                      <button type="button" className="ai-saved-remove" aria-label={`删除平台 ${p.name}`}
+                        onClick={() => void removeProvider(p.id)}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <label className="ai-field">
               <span>接口地址</span>
               <input aria-label="AI 接口地址" value={ai.endpoint} placeholder="https://api.deepseek.com/v1" spellCheck={false}
                 onChange={(e) => set({ endpoint: e.target.value })} />
             </label>
             <label className="ai-field">
+              <span>平台名称（保存时使用）</span>
+              <input ref={nameInputRef} aria-label="AI 平台名称" value={ai.name} placeholder="如：DeepSeek / 我的中转站 / 本地模型" spellCheck={false}
+                onChange={(e) => set({ name: e.target.value })} />
+            </label>
+            <div className="ai-save-row">
+              <button type="button" className="btn ghost sm" disabled={!ai.endpoint.trim()}
+                title="把当前接口地址/模型/密钥保存为一个平台，之后可一键切换"
+                onClick={() => void saveProvider()}>💾 保存为平台</button>
+              {activeSavedId && <span className="ai-save-hint">当前配置已是保存的平台</span>}
+            </div>
+            <label className="ai-field">
               <span>API 密钥</span>
-              <input aria-label="AI API 密钥" type="password" value={ai.key} placeholder="sk-..." spellCheck={false}
+              <input aria-label="AI API 密钥" type="password" value={ai.key} placeholder="sk-...（保存在系统钥匙串）" spellCheck={false}
                 onChange={(e) => set({ key: e.target.value })} />
             </label>
             <div className="ai-field">

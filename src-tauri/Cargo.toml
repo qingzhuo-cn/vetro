@@ -1,6 +1,6 @@
 [package]
 name = "vetro"
-version = "2.6.0"
+version = "2.7.0"
 description = "Vetro — 玻璃拟态 Markdown 编辑器"
 authors = ["qingzhuo-cn"]
 license = "MIT"

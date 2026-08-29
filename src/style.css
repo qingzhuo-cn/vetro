@@ -627,3 +627,28 @@ body.is-resizing .editor-panes > * { pointer-events: none; }
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
   .app-bg { display: none; }
 }
+
+/* ===== AI 多平台管理 ===== */
+.ai-platforms { display: flex; flex-wrap: wrap; gap: 6px; }
+.ai-platform-chip {
+  padding: 5px 12px; border-radius: 999px; font-size: 12px;
+  background: rgba(255,255,255,.05); border: 1px solid var(--glass-border); color: var(--fg-1);
+  transition: all var(--dur-fast);
+}
+.ai-platform-chip:hover { border-color: var(--glass-border-hi); color: var(--fg-0); transform: translateY(-1px); }
+.ai-platform-chip.active { background: var(--accent-soft); border-color: var(--accent-border); color: var(--accent-strong); }
+.ai-saved-list { display: flex; flex-direction: column; gap: 5px; }
+.ai-saved-item { display: flex; align-items: stretch; border-radius: 10px; overflow: hidden; border: 1px solid var(--glass-border); background: rgba(255,255,255,.04); transition: all var(--dur-fast); }
+.ai-saved-item:hover { border-color: var(--glass-border-hi); }
+.ai-saved-item.active { border-color: var(--accent-border); box-shadow: 0 0 0 2px var(--accent-soft); }
+.ai-saved-name { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 12px; text-align: left; color: var(--fg-0); }
+.ai-saved-label { font-size: 13px; font-weight: 600; flex: none; }
+.ai-saved-item.active .ai-saved-label { color: var(--accent-strong); }
+.ai-saved-model { font-size: 11px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ai-saved-remove { width: 34px; flex: none; color: var(--fg-3); font-size: 12px; border-left: 1px solid var(--glass-border); transition: all var(--dur-fast); }
+.ai-saved-remove:hover { color: var(--danger); background: var(--danger-soft); }
+.ai-save-row { display: flex; align-items: center; gap: 10px; }
+.ai-save-hint { font-size: 11px; color: var(--accent-strong); }
+.ai-field-hint { font-size: 11px; color: var(--fg-3); line-height: 1.6; margin-top: 4px; }
+.ai-platform-chip.custom { border-style: dashed; color: var(--accent-strong); }
+.ai-platform-chip.custom:hover { border-color: var(--accent-border); background: var(--accent-soft); }
