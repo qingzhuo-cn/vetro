@@ -9,7 +9,8 @@ import { PluginManager } from './plugins';
 import type { Command, RenderHooks } from './plugins';
 import { ACCENTS, ICONS, rgba, lighten, darken } from './presets';
 import { ErrorBoundary } from './ErrorBoundary';
-import type { Doc, AppConfig, ViewMode } from './types';
+import type { Doc, AppConfig, ViewMode, FontFamily } from './types';
+import { FONT_FAMILIES } from './types';
 import type { Extension } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { demoPlugin } from './demo-plugin';
@@ -21,6 +22,7 @@ import SearchPanel from './SearchPanel';
 import { HELP_DOC } from './help';
 import { checkForUpdates } from './updater';
 import { saveImageToDisk, getImagesDir, loadExternalImages } from './image';
+import { webdavPutSnapshot } from './webdav';
 
 /* ===== 全局 toast ===== */
 type ToastItem = { id: number; msg: string; kind: string };
@@ -28,6 +30,15 @@ let pushToast: ((msg: string, kind?: string) => void) | null = null;
 function toast(msg: string, kind = '') { pushToast?.(msg, kind); }
 
 const pm = new PluginManager({ toast }, (m) => console.log(m));
+
+const FONT_META: Record<FontFamily, { name: string; stack: string }> = {
+  sans: { name: '默认黑体', stack: 'system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif' },
+  hei: { name: '苹方 / 雅黑', stack: '"PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif' },
+  kai: { name: '霞鹜文楷', stack: '"LXGW WenKai Screen", "Kaiti SC", "KaiTi", serif' },
+  song: { name: '宋体', stack: '"Noto Serif SC", "SimSun", "Songti SC", serif' },
+  fang: { name: '仿宋', stack: '"FangSong", "STFangsong", serif' },
+  mono: { name: '等宽', stack: '"JetBrains Mono", "Cascadia Code", Consolas, monospace' },
+};
 
 /* ===== 主题 ===== */
 function resolveTheme(cfg: AppConfig): 'dark' | 'light' {
@@ -46,7 +57,10 @@ function applyTheme(cfg: AppConfig) {
   root.setProperty('--accent-soft', rgba(accent.accent, 0.18));
   root.setProperty('--accent-border', rgba(accent.accent, 0.35));
   root.setProperty('--accent-glow', rgba(accent.accent, 0.38));
+  root.setProperty('--visual-theme', cfg.visualTheme);
+  root.setProperty('--font-family-editor', FONT_META[cfg.fontFamily]?.stack || FONT_META.sans.stack);
   root.setProperty('--editor-fs', cfg.fontSize + 'px');
+  root.setProperty('--pane-ratio', String(cfg.dividerRatio));
   if (accent.vars) for (const [k, v] of Object.entries(accent.vars)) root.setProperty(k, v);
 }
 
@@ -735,7 +749,7 @@ function WindowControls() {
 }
 
 /* ===== 顶栏 ===== */
-function Topbar({ commands, onNew, onCycleView, onToggleSidebar, onOpenAi, onOpenSettings, onExport, onExportZip, onOpenSearch, onOpenHelp }: { commands: Command[]; onNew: () => void; onCycleView: () => void; onToggleSidebar: () => void; onOpenAi: () => void; onOpenSettings: () => void; onExport: () => void; onExportZip: () => void; onOpenSearch: () => void; onOpenHelp: () => void }) {
+function Topbar({ commands, onNew, onCycleView, onToggleSidebar, onToggleFocus, onOpenAi, onOpenSettings, onExport, onExportZip, onOpenSearch, onOpenHelp }: { commands: Command[]; onNew: () => void; onCycleView: () => void; onToggleSidebar: () => void; onToggleFocus: () => void; onOpenAi: () => void; onOpenSettings: () => void; onExport: () => void; onExportZip: () => void; onOpenSearch: () => void; onOpenHelp: () => void }) {
   const cfg = useStore((s) => s.cfg);
   const setCfg = useStore((s) => s.setCfg);
   const [openCmd, setOpenCmd] = useState(false);
@@ -765,7 +779,7 @@ function Topbar({ commands, onNew, onCycleView, onToggleSidebar, onOpenAi, onOpe
         <button className="btn ghost" onClick={() => useStore.getState().undo()} title="撤销 Ctrl+Z">↶</button>
         <button className="btn ghost" onClick={() => useStore.getState().redo()} title="重做 Ctrl+Shift+Z">↷</button>
         <button className="btn ghost" onClick={() => setCfg({ theme: cfg.theme === 'dark' ? 'light' : 'dark' })}>{resolveTheme(cfg) === 'dark' ? '☀' : '🌙'}</button>
-        <button className="btn ghost" onClick={() => setCfg({ focusMode: !cfg.focusMode })} title={cfg.focusMode ? '退出专注模式' : '专注模式'}>{cfg.focusMode ? '✕ 专注' : '🖥 专注'}</button>
+        <button className="btn ghost" onClick={onToggleFocus} title={cfg.focusMode ? '退出专注模式（Ctrl+Shift+F）' : '专注模式（Ctrl+Shift+F）'}>{cfg.focusMode ? '✕ 专注' : '🖥 专注'}</button>
         <button className="btn ghost" onClick={() => setCfg({ typewriterMode: !cfg.typewriterMode })} title={cfg.typewriterMode ? '关闭打字机' : '打字机模式'}>{cfg.typewriterMode ? '⌨' : '📖'}</button>
         <button className="btn ghost" onClick={onOpenSettings}>⚙ 设置</button>
         <button className="btn ghost" onClick={onOpenHelp} title="使用说明">❓</button>
@@ -821,6 +835,33 @@ function Toasts({ items }: { items: ToastItem[] }) {
       {items.map((t) => <div key={t.id} className={'toast ' + t.kind}>{t.msg}</div>)}
     </div>
   );
+}
+
+/* ===== 可调分栏 ===== */
+function SplitDivider() {
+  const setCfg = useStore((s) => s.setCfg);
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const shell = event.currentTarget.parentElement;
+    if (!shell) return;
+    event.preventDefault();
+    document.body.classList.add('is-resizing');
+    const move = (moveEvent: PointerEvent) => {
+      const rect = shell.getBoundingClientRect();
+      if (!rect.width) return;
+      const ratio = Math.max(0.25, Math.min(0.75, (moveEvent.clientX - rect.left) / rect.width));
+      setCfg({ dividerRatio: ratio });
+    };
+    const up = () => {
+      document.body.classList.remove('is-resizing');
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  };
+  return <div className="pane-divider" role="separator" aria-label="调整编辑与预览比例" aria-orientation="vertical" onPointerDown={onPointerDown} />;
 }
 
 /* ===== 根组件 ===== */
@@ -924,6 +965,8 @@ export default function App() {
   // 持久化（防抖）：SQLite（Tauri）或 localStorage（浏览器）；密钥与密码只存系统钥匙串
   // 增量优化：记录文档内容 hash，仅变化时才发送 FTS 数据避免无谓重建
   const lastSavedHash = useRef('');
+  const autosyncTimer = useRef<number | null>(null);
+  const autoSyncFailAt = useRef(0);
   useEffect(() => {
     const t = setTimeout(() => {
       const s = useStore.getState();
@@ -945,13 +988,33 @@ export default function App() {
       dbSaveState(stateJson, docsJson)
         .then(() => {
           s.setSaveStatus('saved');
+          if (s.cfg.sync.autosync && s.cfg.sync.enabled && s.cfg.sync.url) {
+            if (autosyncTimer.current) window.clearTimeout(autosyncTimer.current);
+            autosyncTimer.current = window.setTimeout(() => {
+              const current = useStore.getState();
+              webdavPutSnapshot(current.cfg.sync, { version: 1, updatedAt: Date.now(), docs: current.docs, trash: current.trash })
+                .then(() => useStore.getState().setCfg({ sync: { ...useStore.getState().cfg.sync, lastSync: Date.now() } }))
+                .catch((error) => {
+                  console.warn('[autosync]', error);
+                  // 节流提示：至少间隔 30 秒再提示一次，避免每次编辑都弹
+                  const now = Date.now();
+                  if (now - autoSyncFailAt.current > 30000) {
+                    autoSyncFailAt.current = now;
+                    toast('自动同步失败：' + (error instanceof Error ? error.message : String(error)), 'err');
+                  }
+                });
+            }, 10000);
+          }
           setTimeout(() => {
             if (useStore.getState().saveStatus === 'saved') useStore.getState().setSaveStatus('idle');
           }, 1500);
         })
         .catch(() => { s.setSaveStatus('error'); });
     }, 500);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      if (autosyncTimer.current) window.clearTimeout(autosyncTimer.current);
+    };
   }, [docs, activeId, cfg]);
 
   // 自动检查更新（延迟几秒，静默；发现新版本才提示）
@@ -967,9 +1030,23 @@ export default function App() {
   // 撤销/重做全局快捷键 + 专注模式 ESC 退出
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); useStore.getState().undo(); }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey) { e.preventDefault(); useStore.getState().redo(); }
-      if (e.key === 'Escape' && useStore.getState().cfg.focusMode) { useStore.getState().setCfg({ focusMode: false }); }
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        const current = useStore.getState().cfg;
+        useStore.getState().setCfg({
+          focusMode: !current.focusMode,
+          immersionPreviousView: current.focusMode ? current.immersionPreviousView : current.viewMode,
+          viewMode: current.focusMode && current.immersionPreviousView ? current.immersionPreviousView : current.viewMode,
+        });
+        return;
+      }
+      if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); useStore.getState().undo(); }
+      if (mod && (e.key.toLowerCase() === 'z' && e.shiftKey || e.key.toLowerCase() === 'y')) { e.preventDefault(); useStore.getState().redo(); }
+      if (e.key === 'Escape' && useStore.getState().cfg.focusMode) {
+        const current = useStore.getState().cfg;
+        useStore.getState().setCfg({ focusMode: false, viewMode: current.immersionPreviousView ?? current.viewMode, immersionPreviousView: null });
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -982,6 +1059,15 @@ export default function App() {
     const order: ViewMode[] = ['split', 'preview', 'edit'];
     const i = order.indexOf(viewMode);
     setCfg({ viewMode: order[(i + 1) % order.length] });
+  };
+
+  const toggleFocus = () => {
+    const current = useStore.getState().cfg;
+    if (current.focusMode) {
+      setCfg({ focusMode: false, viewMode: current.immersionPreviousView ?? current.viewMode, immersionPreviousView: null });
+    } else {
+      setCfg({ focusMode: true, immersionPreviousView: current.viewMode, viewMode: 'edit' });
+    }
   };
 
   const exportDoc = async () => {
@@ -1026,14 +1112,14 @@ export default function App() {
   };
 
   return (
-    <div className="app" data-focus={cfg.focusMode || undefined}>
+    <div className="app" data-focus={cfg.focusMode || undefined} data-visual-theme={cfg.visualTheme}>
       <div className="app-bg" aria-hidden>
         <div className="orb orb-1" /><div className="orb orb-2" /><div className="orb orb-3" />
       </div>
-      {!cfg.focusMode && <Topbar commands={commands} onNew={() => createDoc()} onCycleView={cycleView} onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} onOpenAi={() => setAiOpen(true)} onOpenSettings={() => setSettingsOpen(true)} onExport={exportDoc} onExportZip={exportZip} onOpenSearch={() => setSearchOpen(true)} onOpenHelp={openHelp} />}
+      {!cfg.focusMode && <Topbar commands={commands} onNew={() => createDoc()} onCycleView={cycleView} onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} onToggleFocus={toggleFocus} onOpenAi={() => setAiOpen(true)} onOpenSettings={() => setSettingsOpen(true)} onExport={exportDoc} onExportZip={exportZip} onOpenSearch={() => setSearchOpen(true)} onOpenHelp={openHelp} />}
       {cfg.focusMode && (
         <div className="focus-float-bar">
-          <button className="btn ghost sm" onClick={() => setCfg({ focusMode: false })}>✕ 退出专注</button>
+          <button className="btn ghost sm" onClick={toggleFocus}>✕ 退出专注</button>
           <WindowControls />
         </div>
       )}
@@ -1059,12 +1145,16 @@ export default function App() {
             <button className={'tab' + (viewMode === 'split' ? ' active' : '')} onClick={() => setCfg({ viewMode: 'split' })}>分栏</button>
             <button className={'tab' + (viewMode === 'preview' ? ' active' : '')} onClick={() => setCfg({ viewMode: 'preview' })}>预览</button>
           </div>
-          <div className="editor-panes">
+          <div
+            className="editor-panes"
+            style={{ '--pane-ratio': `${Math.round(cfg.dividerRatio * 100)}%` } as React.CSSProperties}
+          >
             {active && (
               <>
                 <div className={'pane pane-edit' + (viewMode === 'preview' ? ' hidden' : '')}>
                   <EditorPane doc={active} extra={editorExts} />
                 </div>
+                {viewMode === 'split' && <SplitDivider />}
                 <div className={'pane pane-preview' + (viewMode === 'edit' ? ' hidden' : '')}>
                   <PreviewPane doc={active} hooks={renderHooks} />
                 </div>

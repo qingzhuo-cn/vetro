@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { Doc, TrashItem, AppConfig } from './types';
-import { defaultConfig, uid } from './types';
+import type { Doc, TrashItem, AppConfig, ViewMode } from './types';
+import { defaultConfig, FONT_FAMILIES, uid, VISUAL_THEMES } from './types';
 
 export type SidebarTab = 'docs' | 'outline' | 'trash' | 'tags' | 'attachments';
 
@@ -33,6 +33,7 @@ interface VetroState {
   setCfg(patch: Partial<AppConfig>): void;
   setFilterTag(tag: string | null): void;
   setSaveStatus(status: SaveStatus): void;
+  replaceDocuments(docs: Doc[], trash: TrashItem[], activeId?: string | null): void;
   createDoc(name?: string, content?: string, parentId?: string | null): Doc;
   updateDoc(id: string, patch: Partial<Doc>): void;
   /** updateDoc 的快照感知版本，记录到 undo 栈 */
@@ -50,6 +51,83 @@ interface VetroState {
   redo(): void;
   /** 收集所有文档中使用的标签 */
   allTags(): string[];
+}
+
+function validOneOf<T extends string>(value: unknown, values: readonly T[], fallback: T): T {
+  return typeof value === 'string' && values.includes(value as T) ? value as T : fallback;
+}
+
+const VIEW_MODES = ['edit', 'split', 'preview'] as const;
+function validViewOrNull(value: unknown): ViewMode | null {
+  return typeof value === 'string' && VIEW_MODES.includes(value as ViewMode) ? value as ViewMode : null;
+}
+function sanitizeDoc(value: unknown): Doc | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Partial<Doc>;
+  if (typeof raw.id !== 'string' || typeof raw.name !== 'string' || typeof raw.content !== 'string') return null;
+  return {
+    id: raw.id,
+    name: raw.name || '未命名.md',
+    content: raw.content,
+    parentId: typeof raw.parentId === 'string' ? raw.parentId : null,
+    filePath: typeof raw.filePath === 'string' ? raw.filePath : null,
+    sync: raw.sync !== false,
+    tags: Array.isArray(raw.tags) ? raw.tags.filter((tag): tag is string => typeof tag === 'string').slice(0, 100) : [],
+    favorite: raw.favorite === true,
+    createdAt: typeof raw.createdAt === 'number' && Number.isFinite(raw.createdAt) ? raw.createdAt : Date.now(),
+    updatedAt: typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt) ? raw.updatedAt : Date.now(),
+  };
+}
+
+function sanitizeTrash(value: unknown): TrashItem | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Partial<TrashItem>;
+  const doc = sanitizeDoc(raw);
+  if (!doc || typeof raw.deletedAt !== 'number' || !Number.isFinite(raw.deletedAt)) return null;
+  return { ...doc, deletedAt: raw.deletedAt };
+}
+
+function sanitizeConfig(input: Partial<AppConfig> | undefined): AppConfig {
+  const defaults = defaultConfig();
+  const raw = input && typeof input === 'object' ? input as Record<string, unknown> : {};
+  const aiRaw = raw.ai && typeof raw.ai === 'object' ? raw.ai as Record<string, unknown> : {};
+  const syncRaw = raw.sync && typeof raw.sync === 'object' ? raw.sync as Record<string, unknown> : {};
+  const theme = validOneOf(raw.theme, ['auto', 'dark', 'light'] as const, defaults.theme);
+  const viewMode = validOneOf(raw.viewMode, ['edit', 'split', 'preview'] as const, defaults.viewMode);
+  const visualTheme = validOneOf(raw.visualTheme, VISUAL_THEMES, defaults.visualTheme);
+  const fontFamily = validOneOf(raw.fontFamily, FONT_FAMILIES, defaults.fontFamily);
+  const fontSize = typeof raw.fontSize === 'number' && Number.isFinite(raw.fontSize) ? Math.max(12, Math.min(24, raw.fontSize)) : defaults.fontSize;
+  const dividerRatio = typeof raw.dividerRatio === 'number' && Number.isFinite(raw.dividerRatio) ? Math.max(0.25, Math.min(0.75, raw.dividerRatio)) : defaults.dividerRatio;
+  return {
+    ...defaults,
+    theme,
+    visualTheme,
+    viewMode,
+    fontSize,
+    fontFamily,
+    dividerRatio,
+    immersionPreviousView: validViewOrNull(raw.immersionPreviousView),
+    wrap: raw.wrap !== false,
+    accent: typeof raw.accent === 'string' ? raw.accent : defaults.accent,
+    icon: typeof raw.icon === 'string' ? raw.icon : defaults.icon,
+    customThemes: Array.isArray(raw.customThemes) ? raw.customThemes.filter((theme): theme is AppConfig['customThemes'][number] => !!theme && typeof theme === 'object' && typeof (theme as { id?: unknown }).id === 'string') : [],
+    ai: {
+      endpoint: typeof aiRaw.endpoint === 'string' ? aiRaw.endpoint : defaults.ai.endpoint,
+      key: '',
+      model: typeof aiRaw.model === 'string' && aiRaw.model ? aiRaw.model : defaults.ai.model,
+      ok: aiRaw.ok === true,
+    },
+    sync: {
+      enabled: syncRaw.enabled === true,
+      url: typeof syncRaw.url === 'string' ? syncRaw.url : defaults.sync.url,
+      username: typeof syncRaw.username === 'string' ? syncRaw.username : defaults.sync.username,
+      password: '',
+      autosync: syncRaw.autosync === true,
+      lastSync: typeof syncRaw.lastSync === 'number' && Number.isFinite(syncRaw.lastSync) ? syncRaw.lastSync : 0,
+    },
+    focusMode: raw.focusMode === true,
+    typewriterMode: raw.typewriterMode === true,
+  };
 }
 
 /** 创建用于 undo 的快照（只保留需要恢复的字段） */
@@ -73,18 +151,21 @@ export const useStore = create<VetroState>((set, get) => ({
   redoStack: [],
 
   load(data) {
-    set({
-      docs: data.docs || [],
-      trash: data.trash || [],
-      activeId: data.activeId ?? null,
-      cfg: { ...defaultConfig(), ...(data.cfg || {}) }
-    });
+    const docs = Array.isArray(data?.docs) ? data.docs.map(sanitizeDoc).filter((d): d is Doc => !!d) : [];
+    const trash = Array.isArray(data?.trash) ? data.trash.map(sanitizeTrash).filter((d): d is TrashItem => !!d) : [];
+    const activeId = typeof data?.activeId === 'string' && docs.some((d) => d.id === data.activeId) ? data.activeId : (docs[0]?.id ?? null);
+    set({ docs, trash, activeId, cfg: sanitizeConfig(data?.cfg) });
   },
   setActive(id) { set({ activeId: id }); },
   setSidebarTab(tab) { set({ sidebarTab: tab }); },
   setCfg(patch) { set((s) => ({ cfg: { ...s.cfg, ...patch } })); },
   setFilterTag(tag) { set({ filterTag: tag }); },
   setSaveStatus(status) { set({ saveStatus: status }); },
+  replaceDocuments(docs, trash, activeId) {
+    const safeDocs = docs.map(sanitizeDoc).filter((d): d is Doc => !!d);
+    const safeTrash = trash.map(sanitizeTrash).filter((d): d is TrashItem => !!d);
+    set({ docs: safeDocs, trash: safeTrash, activeId: activeId && safeDocs.some((d) => d.id === activeId) ? activeId : (safeDocs[0]?.id ?? null) });
+  },
 
   createDoc(name?: string, content?: string, parentId?: string | null) {
     const d: Doc = {

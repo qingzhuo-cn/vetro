@@ -8,7 +8,7 @@
 
 透明 · 轻盈 · 流光
 
-[![version](https://img.shields.io/badge/version-v2.1.0-4ecdc4?style=for-the-badge&labelColor=0d1117)](https://github.com/qingzhuo-cn/vetro/releases)
+[![version](https://img.shields.io/badge/version-v2.6.0-4ecdc4?style=for-the-badge&labelColor=0d1117)](https://github.com/qingzhuo-cn/vetro/releases)
 [![tauri](https://img.shields.io/badge/Tauri-2-7c9eff?style=for-the-badge&labelColor=0d1117)](https://tauri.app)
 [![platform](https://img.shields.io/badge/platform-Windows-818cf8?style=for-the-badge&labelColor=0d1117)](https://github.com/qingzhuo-cn/vetro/releases)
 [![license](https://img.shields.io/badge/license-MIT-34d399?style=for-the-badge&labelColor=0d1117)](LICENSE)

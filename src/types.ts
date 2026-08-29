@@ -34,6 +34,10 @@ export interface IconStyle {
 
 export type ThemeMode = 'auto' | 'dark' | 'light';
 export type ViewMode = 'edit' | 'split' | 'preview';
+export const VISUAL_THEMES = ['midnight', 'dawn', 'ocean', 'sakura', 'aurora', 'mocha'] as const;
+export type VisualTheme = (typeof VISUAL_THEMES)[number];
+export const FONT_FAMILIES = ['sans', 'hei', 'kai', 'song', 'fang', 'mono'] as const;
+export type FontFamily = (typeof FONT_FAMILIES)[number];
 
 export interface AiConfig {
   endpoint: string;
@@ -47,12 +51,18 @@ export interface SyncConfig {
   url: string;
   username: string;
   password: string;
+  autosync: boolean;
+  lastSync: number;
 }
 
 export interface AppConfig {
   theme: ThemeMode;
+  visualTheme: VisualTheme;
   viewMode: ViewMode;
   fontSize: number;
+  fontFamily: FontFamily;
+  dividerRatio: number;
+  immersionPreviousView: ViewMode | null;
   wrap: boolean;
   accent: string;
   icon: string;
@@ -68,14 +78,18 @@ export interface AppConfig {
 export function defaultConfig(): AppConfig {
   return {
     theme: 'auto',
+    visualTheme: 'midnight',
     viewMode: 'split',
     fontSize: 15,
+    fontFamily: 'sans',
+    dividerRatio: 0.5,
+    immersionPreviousView: null,
     wrap: true,
     accent: 'teal',
     icon: 'markdown',
     customThemes: [],
     ai: { endpoint: '', key: '', model: 'deepseek-chat', ok: false },
-    sync: { enabled: false, url: '', username: '', password: '' },
+    sync: { enabled: false, url: '', username: '', password: '', autosync: false, lastSync: 0 },
     focusMode: false,
     typewriterMode: false,
   };
@@ -86,5 +100,8 @@ export function uid(): string {
 }
 
 export function countWords(content: string): number {
-  return (content || '').replace(/\s/g, '').length;
+  const text = content || '';
+  const cjk = (text.match(/[\u3400-\u9fff\u3040-\u30ff]/g) || []).length;
+  const latin = (text.replace(/[\u3400-\u9fff\u3040-\u30ff]/g, ' ').match(/[A-Za-z0-9]+/g) || []).length;
+  return cjk + latin;
 }

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Vetro",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "identifier": "com.qingzhuo.vetro",
   "build": {
     "frontendDist": "../dist",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Vetro",
+        "title": "Vetro · 琉璃墨",
         "width": 1280,
         "height": 800,
         "minWidth": 940,
@@ -40,8 +40,10 @@
       "icons/icon.ico"
     ],
     "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
       "nsis": {
-        "template": "nsis/installer.nsi"
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
       }
     }
   }
