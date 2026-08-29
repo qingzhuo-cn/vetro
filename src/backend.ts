@@ -57,7 +57,7 @@ export interface SearchHit {
 export function getVersion(): Promise<string> {
   if (isTauri) return invoke<string>('get_version');
   // 浏览器开发态 / 鸿蒙 H5 壳的回退版本号，需与 package.json 保持一致
-  return Promise.resolve('2.7.0');
+  return Promise.resolve('2.8.0');
 }
 
 /* ===== 浏览器端加密密码管理（IndexedDB 存储） ===== */

@@ -89,6 +89,7 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [models, setModels] = useState<string[]>([]);
   const [showSettings, setShowSettings] = useState(!ai.ok);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -104,6 +105,7 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
+      if (switcherOpen) { setSwitcherOpen(false); return; }
       if (busy) abortRef.current?.abort();
       else onClose();
     };
@@ -112,7 +114,17 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
       window.removeEventListener('keydown', onKeyDown);
       abortRef.current?.abort();
     };
-  }, [busy, onClose]);
+  }, [busy, onClose, switcherOpen]);
+
+  // 点击面板外或选择器外区域时关闭平台下拉
+  useEffect(() => {
+    if (!switcherOpen) return;
+    const close = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.ai-switcher')) setSwitcherOpen(false);
+    };
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [switcherOpen]);
 
   const set = (patch: Partial<AiConfig>) => setCfg({ ai: { ...ai, ...patch } });
 
@@ -138,22 +150,27 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
     setTimeout(() => nameInputRef.current?.focus(), 60);
   };
 
-  // 切换到已保存的平台：从钥匙串读取该平台独立密钥
+  // 切换平台前，先把当前编辑中的密钥写回它所属平台的钥匙串槽位，避免丢失
   const switchProvider = async (p: AiProviderPreset) => {
     if (busy) return;
+    const currentSaved = providers.find((x) => x.endpoint === ai.endpoint && (!ai.model || x.model === ai.model));
+    if (currentSaved && currentSaved.id !== p.id) {
+      try { await secureSet('ai-key-' + currentSaved.id, ai.key); } catch { /* 忽略 */ }
+    }
     let key = '';
     try { key = (await secureGet('ai-key-' + p.id)) ?? ''; } catch { /* 钥匙串不可用时留空 */ }
     set({ name: p.name, endpoint: p.endpoint, model: p.model, key, ok: false });
     setModels([]);
+    setSwitcherOpen(false);
   };
 
-  // 保存当前配置为平台（endpoint+model 相同视为同一平台，更新而非新建）
+  // 保存当前配置为平台（地址+模型 相同视为同一平台，更新而非新建；同地址不同模型可各存一条）
   const saveProvider = async () => {
     if (!ai.endpoint.trim()) return;
     const name = (ai.name || AI_PLATFORM_PRESETS.find((p) => p.endpoint === ai.endpoint)?.name || '自定义平台').trim().slice(0, 30);
-    const existing = providers.find((p) => p.endpoint === ai.endpoint);
+    const existing = providers.find((p) => p.endpoint === ai.endpoint && p.model === ai.model);
     const entry: AiProviderPreset = existing
-      ? { ...existing, name, model: ai.model }
+      ? { ...existing, name }
       : { id: uid(), name, endpoint: ai.endpoint.trim(), model: ai.model };
     const next = existing
       ? providers.map((p) => (p.id === existing.id ? entry : p))
@@ -326,6 +343,31 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
         <header className="ai-head">
           <span className="ai-title" id="ai-panel-title">AI 助手</span>
           <div className="ai-head-actions">
+            <div className="ai-switcher">
+              <button type="button" className="btn ghost sm ai-switch-btn" aria-haspopup="menu" aria-expanded={switcherOpen}
+                title={providers.length ? '切换 AI 平台' : '还没有保存的平台，点「设置」添加'}
+                onClick={() => setSwitcherOpen((o) => !o)}>
+                <span className="ai-switch-dot" aria-hidden />
+                <span className="ai-switch-current">{ai.name || '未命名平台'}</span>
+                <span className="ai-switch-caret" aria-hidden>▾</span>
+              </button>
+              {switcherOpen && (
+                <div className="ai-switch-menu" role="menu" aria-label="切换 AI 平台">
+                  {providers.length === 0 && <div className="ai-switch-empty">还没有保存的平台<br />点下方「设置」添加</div>}
+                  {providers.map((p) => (
+                    <button type="button" key={p.id} role="menuitem"
+                      className={'ai-switch-item' + (p.id === activeSavedId ? ' active' : '')}
+                      onClick={() => void switchProvider(p)}>
+                      <span className="ai-switch-name">{p.name}</span>
+                      <span className="ai-switch-model">{p.model}</span>
+                      {p.id === activeSavedId && <span className="ai-switch-check" aria-hidden>✓</span>}
+                    </button>
+                  ))}
+                  <button type="button" role="menuitem" className="ai-switch-item manage"
+                    onClick={() => { setSwitcherOpen(false); setShowSettings(true); }}>⚙ 管理平台…</button>
+                </div>
+              )}
+            </div>
             <button
               type="button"
               className="btn ghost sm"
