@@ -15,7 +15,23 @@
 
 从 Electron 全面重写为 **Tauri 2** —— 单进程、安装包更小、启动更快、内存占用更低。
 
+**⬇ [下载最新版](https://github.com/qingzhuo-cn/vetro/releases/latest)**
+`Vetro-x.x.x_x64-setup.exe`（Windows） · `.msi` · Linux `.deb` / `.AppImage`
+
+```bash
+# 从源码 3 步跑起来
+npm install && npm run tauri dev
+```
+
 </div>
+
+---
+
+## 📸 截图
+
+<!-- 在此插入应用截图（建议 1280×800，2–3 张：主界面 · 实时预览 · AI 助手）。
+     例如：<img src="assets/screenshots/main.png" width="720" alt="Vetro 主界面"> -->
+主界面 · 实时预览 · AI 助手
 
 ---
 
