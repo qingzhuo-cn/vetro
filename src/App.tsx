@@ -25,8 +25,12 @@ import { saveImageToDisk, getImagesDir, loadExternalImages } from './image';
 import { webdavPutSnapshot } from './webdav';
 
 /* ===== 全局 toast ===== */
-type ToastItem = { id: number; msg: string; kind: string };
+type ToastItem = { id: number; msg: string; kind: string; ttl: number };
+type ToastEntry = { timer: ReturnType<typeof setTimeout>; startedAt: number; ttl: number };
 let pushToast: ((msg: string, kind?: string) => void) | null = null;
+let pauseToast: ((id: number) => void) | null = null;
+let resumeToast: ((id: number) => void) | null = null;
+let dismissToast: ((id: number) => void) | null = null;
 function toast(msg: string, kind = '') { pushToast?.(msg, kind); }
 
 const pm = new PluginManager({ toast }, (m) => console.log(m));
@@ -565,7 +569,7 @@ function DocTree() {
     let src = '';
     try { src = e.dataTransfer.getData('text/vetro-doc') || ''; } catch { /* ignore */ }
     setDragOverId(null);
-    if (src) moveDoc(src, parentId);
+    if (src) { moveDoc(src, parentId); toast('已移动到「' + (parentId ? '子文档' : '顶层') + '」', 'ok'); }
   };
 
   return (
@@ -618,7 +622,7 @@ function DocTree() {
                   {doc.tags.map((tag) => (
                     <span key={tag} className="tag-pill">
                       {tag}
-                      <button className="tag-pill-remove" onClick={(e) => { e.stopPropagation(); removeDocTag(doc.id, tag); }}>×</button>
+                      <button className="tag-pill-remove" onClick={(e) => { e.stopPropagation(); removeDocTag(doc.id, tag); toast('已移除标签「' + tag + '」', 'ok'); }}>×</button>
                     </span>
                   ))}
                 </div>
@@ -647,8 +651,8 @@ function DocTree() {
             <button className="doc-subnew" title="新建子文档" onClick={(e) => { e.stopPropagation(); createDoc(doc.name.replace(/\.\w+$/i, '') + ' · 子文档.md', '', doc.id); }}>＋</button>
             <button className="doc-subnew" title="添加标签" onClick={(e) => { e.stopPropagation(); setTagInputId(tagInputId === doc.id ? null : doc.id); setTagInputVal(''); }}>🏷</button>
             <button className={'doc-subnew' + ((doc as any).favorite ? ' doc-fav active' : '')} title={(doc as any).favorite ? '取消收藏' : '收藏'} onClick={(e) => { e.stopPropagation(); toggleDocFavorite(doc.id); }}>★</button>
-            <button className="doc-move" title="提升为主文档" onClick={(e) => { e.stopPropagation(); setDocParent(doc.id, null); }}>↳</button>
-            <button className="doc-del" title="删除" onClick={(e) => { e.stopPropagation(); deleteDoc(doc.id); }}>🗑</button>
+            <button className="doc-move" title="提升为主文档" onClick={(e) => { e.stopPropagation(); setDocParent(doc.id, null); toast('已提升为主文档', 'ok'); }}>↳</button>
+            <button className="doc-del" title="删除" onClick={(e) => { e.stopPropagation(); deleteDoc(doc.id); toast('已删除「' + doc.name + '」，可在回收站恢复', 'ok'); }}>🗑</button>
           </div>
         );
       })}
@@ -668,8 +672,13 @@ function TrashList() {
         <div key={t.id} className="doc-item trash-item">
           <div className="doc-ico">🗑</div>
           <div className="doc-meta"><div className="doc-name">{t.name}</div></div>
-          <button className="btn ghost sm" onClick={() => restore(t.id)}>恢复</button>
-          <button className="btn ghost sm doc-purge" onClick={() => purge(t.id)}>彻底删除</button>
+          <button className="btn ghost sm" onClick={() => { restore(t.id); toast('已恢复「' + t.name + '」', 'ok'); }}>恢复</button>
+          <button className="btn ghost sm doc-purge" onClick={() => {
+            if (window.confirm('彻底删除「' + t.name + '」？此操作不可撤销。')) {
+              purge(t.id);
+              toast('已彻底删除「' + t.name + '」', 'ok');
+            }
+          }}>彻底删除</button>
         </div>
       ))}
     </div>
@@ -832,7 +841,21 @@ function StatusBar() {
 function Toasts({ items }: { items: ToastItem[] }) {
   return (
     <div className="toast-wrap">
-      {items.map((t) => <div key={t.id} className={'toast ' + t.kind}>{t.msg}</div>)}
+      {items.map((t) => (
+        <div
+          key={t.id}
+          className={'toast ' + t.kind}
+          style={{ '--toast-ttl': t.ttl + 'ms' } as React.CSSProperties}
+          onMouseEnter={() => pauseToast?.(t.id)}
+          onMouseLeave={() => resumeToast?.(t.id)}
+          onClick={() => dismissToast?.(t.id)}
+          role="status"
+        >
+          <span className="toast-ico" aria-hidden>{t.kind === 'err' ? '⚠' : t.kind === 'ok' ? '✓' : 'ℹ'}</span>
+          <span className="toast-msg">{t.msg}</span>
+          <span className="toast-bar" aria-hidden />
+        </div>
+      ))}
     </div>
   );
 }
@@ -949,14 +972,37 @@ export default function App() {
     else secureDelete('sync-password').catch((e) => console.warn('[secureDelete sync-pwd]', e));
   }, [cfg.sync.password]);
 
-  // toast 注入
+  // toast 注入：分级时长（错误更久）+ 悬停暂停 + 点击即消
   useEffect(() => {
+    const entries = new Map<number, ToastEntry>();
+    const clear = (id: number) => {
+      const e = entries.get(id);
+      if (e) { clearTimeout(e.timer); entries.delete(id); }
+    };
+    const drop = (id: number) => { clear(id); setToasts((prev) => prev.filter((t) => t.id !== id)); };
     pushToast = (msg, kind) => {
       const id = Date.now() + Math.random();
-      setToasts((prev) => [...prev, { id, msg, kind: kind || '' }]);
-      setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 2800);
+      const ttl = kind === 'err' ? 5000 : 2400;
+      setToasts((prev) => [...prev, { id, msg, kind: kind || '', ttl }]);
+      entries.set(id, { timer: setTimeout(() => drop(id), ttl), startedAt: Date.now(), ttl });
     };
-    return () => { pushToast = null; };
+    pauseToast = (id) => {
+      const e = entries.get(id);
+      if (!e) return;
+      clearTimeout(e.timer);
+      e.ttl = Math.max(600, e.ttl - (Date.now() - e.startedAt));
+    };
+    resumeToast = (id) => {
+      const e = entries.get(id);
+      if (!e) return;
+      e.startedAt = Date.now();
+      e.timer = setTimeout(() => drop(id), e.ttl);
+    };
+    dismissToast = drop;
+    return () => {
+      for (const id of [...entries.keys()]) clear(id);
+      pushToast = null; pauseToast = null; resumeToast = null; dismissToast = null;
+    };
   }, []);
 
   // 主题变化
@@ -1112,7 +1158,7 @@ export default function App() {
   };
 
   return (
-    <div className="app" data-focus={cfg.focusMode || undefined} data-visual-theme={cfg.visualTheme}>
+    <div className="app" data-focus={cfg.focusMode || undefined} data-visual-theme={cfg.visualTheme} data-view={viewMode}>
       <div className="app-bg" aria-hidden>
         <div className="orb orb-1" /><div className="orb orb-2" /><div className="orb orb-3" />
       </div>
@@ -1137,7 +1183,11 @@ export default function App() {
               ))}
             </div>
           </div>
-          {!sidebarCollapsed && (sidebarTab === 'docs' ? <DocTree /> : sidebarTab === 'outline' ? <OutlineList /> : sidebarTab === 'tags' ? <TagPanel /> : sidebarTab === 'attachments' ? <AttachmentsPanel /> : <TrashList />)}
+          {!sidebarCollapsed && (
+            <div className="sidebar-body" key={sidebarTab}>
+              {sidebarTab === 'docs' ? <DocTree /> : sidebarTab === 'outline' ? <OutlineList /> : sidebarTab === 'tags' ? <TagPanel /> : sidebarTab === 'attachments' ? <AttachmentsPanel /> : <TrashList />}
+            </div>
+          )}
         </aside>
         <div className="editor-shell">
           <div className="view-tabs">
@@ -1151,11 +1201,11 @@ export default function App() {
           >
             {active && (
               <>
-                <div className={'pane pane-edit' + (viewMode === 'preview' ? ' hidden' : '')}>
+                <div className="pane pane-edit">
                   <EditorPane doc={active} extra={editorExts} />
                 </div>
                 {viewMode === 'split' && <SplitDivider />}
-                <div className={'pane pane-preview' + (viewMode === 'edit' ? ' hidden' : '')}>
+                <div className="pane pane-preview">
                   <PreviewPane doc={active} hooks={renderHooks} />
                 </div>
               </>

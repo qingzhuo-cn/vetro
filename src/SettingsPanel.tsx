@@ -128,6 +128,7 @@ function SyncSection() {
   };
 
   const download = async () => {
+    if (!window.confirm('用云端快照覆盖本机全部文档？\n\n本机未同步的改动将丢失，此操作不可撤销。建议先执行「智能同步」。')) return;
     setBusy(true); setStatus('');
     try {
       const remote = await webdavGetSnapshot(sync);
