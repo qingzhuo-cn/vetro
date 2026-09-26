@@ -557,6 +557,31 @@ function DocTree() {
   const toggleDocFavorite = useStore((s) => s.toggleDocFavorite);
   const filterTag = useStore((s) => s.filterTag);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // 文档操作菜单：单行只放一个 ⋯ 触发器，6 个操作收进菜单
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('click', close);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', close);
+    };
+  }, [menu]);
+
+  // 菜单定位：贴着触发器左下方展开，贴边时向内收，避免溢出视口
+  const openMenu = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (menu?.id === id) { setMenu(null); return; }
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const w = 156, h = 244;
+    setMenu({ id, x: Math.min(r.right - w, window.innerWidth - w - 8), y: Math.min(r.bottom + 6, window.innerHeight - h - 8) });
+  };
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [tagInputId, setTagInputId] = useState<string | null>(null);
   const [tagInputVal, setTagInputVal] = useState('');
@@ -647,18 +672,44 @@ function DocTree() {
                 />
               )}
             </div>
-            {/* 操作区绝对定位覆盖：不再挤占布局宽度，文档名可获得完整空间 */}
+            {/* 操作区：单个 ⋯ 触发器。早期平铺 6 个按钮（☁ ＋ 🏷 ★ ↳ 🗑）
+                占 120px + 间隙，在 276px 侧栏里把文档名挤到约 10px，
+                且覆盖文字时必须给底色 —— 而侧栏是动态背景上的玻璃，
+                任何实色底都会与行背景产生色差。收敛成菜单后两者都消失。 */}
             <div className="doc-actions">
-              <button className={'doc-sync ' + (doc.sync !== false ? 'on' : 'off')} title={doc.sync !== false ? '已启用同步' : '已禁用同步'} onClick={(e) => { e.stopPropagation(); toggleDocSync(doc.id); }}>☁</button>
-              <button className="doc-subnew" title="新建子文档" onClick={(e) => { e.stopPropagation(); createDoc(doc.name.replace(/\.\w+$/i, '') + ' · 子文档.md', '', doc.id); }}>＋</button>
-              <button className="doc-subnew" title="添加标签" onClick={(e) => { e.stopPropagation(); setTagInputId(tagInputId === doc.id ? null : doc.id); setTagInputVal(''); }}>🏷</button>
-              <button className={'doc-subnew' + ((doc as any).favorite ? ' doc-fav active' : '')} title={(doc as any).favorite ? '取消收藏' : '收藏'} onClick={(e) => { e.stopPropagation(); toggleDocFavorite(doc.id); }}>★</button>
-              <button className="doc-move" title="提升为主文档" onClick={(e) => { e.stopPropagation(); setDocParent(doc.id, null); toast('已提升为主文档', 'ok'); }}>↳</button>
-              <button className="doc-del" title="删除" onClick={(e) => { e.stopPropagation(); deleteDoc(doc.id); toast('已删除「' + doc.name + '」，可在回收站恢复', 'ok'); }}>🗑</button>
+              <button className="doc-more" title="更多操作" onClick={(e) => openMenu(e, doc.id)}>⋯</button>
             </div>
           </div>
         );
       })}
+
+      {menu && (() => {
+        const d = docs.find((x) => x.id === menu.id);
+        if (!d) return null;
+        const run = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); setMenu(null); fn(); };
+        return (
+          <div className="doc-menu" role="menu" style={{ left: menu.x, top: menu.y }} onClick={(e) => e.stopPropagation()}>
+            <button role="menuitem" onClick={run(() => toggleDocSync(d.id))}>
+              <span>{d.sync !== false ? '☁' : '⊘'}</span>{d.sync !== false ? '停用同步' : '启用同步'}
+            </button>
+            <button role="menuitem" onClick={run(() => createDoc(d.name.replace(/\.\w+$/i, '') + ' · 子文档.md', '', d.id))}>
+              <span>＋</span>新建子文档
+            </button>
+            <button role="menuitem" onClick={run(() => { setTagInputId(d.id); setTagInputVal(''); })}>
+              <span>🏷</span>添加标签
+            </button>
+            <button role="menuitem" onClick={run(() => toggleDocFavorite(d.id))}>
+              <span>★</span>{(d as any).favorite ? '取消收藏' : '收藏'}
+            </button>
+            <button role="menuitem" onClick={run(() => { setDocParent(d.id, null); toast('已提升为主文档', 'ok'); })}>
+              <span>↳</span>提升为主文档
+            </button>
+            <button role="menuitem" className="danger" onClick={run(() => { deleteDoc(d.id); toast('已删除「' + d.name + '」，可在回收站恢复', 'ok'); })}>
+              <span>🗑</span>删除
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 }
