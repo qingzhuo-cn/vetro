@@ -164,6 +164,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .doc-list { flex: 1; overflow-y: auto; padding: 0 8px; }
 .doc-empty { padding: 34px 10px; text-align: center; color: var(--fg-3); font-size: 12px; }
 .doc-item {
+  position: relative;
   display: flex; align-items: center; gap: 8px;
   padding: 9px 10px; border-radius: 10px; margin: 2px 0;
   cursor: pointer; border: 1px solid transparent;
@@ -181,10 +182,27 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .doc-sub { font-size: 10px; color: var(--fg-3); }
 .doc-caret { width: 16px; height: 16px; flex-shrink: 0; color: var(--fg-3); font-size: 9px; }
 .doc-caret.ph { pointer-events: none; }
+/* 操作区：绝对定位覆盖在行右侧，hover 时淡入。
+   不占布局宽度 —— 否则 6 个 20px 按钮 + gap 会把文档名挤到 ~10px。 */
+.doc-actions {
+  position: absolute; right: 6px; top: 0; bottom: 0; z-index: 2;
+  display: flex; align-items: center; gap: 2px;
+  padding-left: 20px; border-radius: 0 12px 12px 0;
+  background: inherit;
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--dur-fast);
+}
+.doc-item:hover .doc-actions, .doc-item.active .doc-actions { opacity: 1; pointer-events: auto; }
 .doc-sync, .doc-subnew, .doc-move, .doc-del { opacity: 0; width: 20px; height: 20px; flex-shrink: 0; border-radius: 5px; color: var(--fg-3); font-size: 12px; display: grid; place-items: center; transition: opacity var(--dur-fast), color var(--dur-fast), background-color var(--dur-fast); }
-.doc-item:hover .doc-sync, .doc-item:hover .doc-subnew, .doc-item:hover .doc-move, .doc-item:hover .doc-del { opacity: 1; }
+.doc-item:hover .doc-actions .doc-sync, .doc-item:hover .doc-actions .doc-subnew,
+.doc-item:hover .doc-actions .doc-move, .doc-item:hover .doc-actions .doc-del,
+.doc-item.active .doc-actions .doc-sync, .doc-item.active .doc-actions .doc-subnew,
+.doc-item.active .doc-actions .doc-move, .doc-item.active .doc-actions .doc-del { opacity: 1; }
 .doc-sync.on { color: var(--accent-strong); background: var(--accent-soft); }
 .doc-sync.off { color: var(--fg-3); opacity: 0.55; text-decoration: line-through; }
+/* 保留「已停用同步」的弱化提示，不被上面的显示规则拉满 */
+.doc-item:hover .doc-actions .doc-sync.off,
+.doc-item.active .doc-actions .doc-sync.off { opacity: 0.55; }
 .doc-subnew:hover, .doc-move:hover { color: var(--accent-strong); background: var(--accent-soft); }
 .doc-del:hover { color: var(--danger); background: var(--danger-soft); }
 .doc-purge { color: var(--danger) !important; }
@@ -767,13 +785,12 @@ body.is-resizing .editor-panes > * { pointer-events: none; }
   animation: jelly-squash var(--dur-jelly) var(--ease-jelly);
 }
 
-/* 列表项 hover 微浮起 */
+/* 列表项 hover：只做背景/边框反馈。
+   不做横向位移 —— .doc-list / .attachments-grid 的 overflow-y:auto 会连带把
+   overflow-x 计算成 auto（横向裁剪），右移会把 🗑 删除按钮裁掉。 */
 .doc-item, .trash-item, .outline-item, .attachment-item {
   transition: background-color var(--dur-fast), border-color var(--dur-fast),
-              box-shadow var(--dur) var(--ease-jelly), translate var(--dur) var(--ease-jelly);
-}
-.doc-item:hover, .trash-item:hover, .outline-item:hover, .attachment-item:hover {
-  translate: 3px 0;
+              box-shadow var(--dur) var(--ease-jelly);
 }
 .ai-model-chip:hover, .ai-platform-chip:hover, .tag-chip:hover {
   translate: 0 -1px;

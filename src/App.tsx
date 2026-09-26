@@ -647,12 +647,15 @@ function DocTree() {
                 />
               )}
             </div>
-            <button className={'doc-sync ' + (doc.sync !== false ? 'on' : 'off')} title={doc.sync !== false ? '已启用同步' : '已禁用同步'} onClick={(e) => { e.stopPropagation(); toggleDocSync(doc.id); }}>☁</button>
-            <button className="doc-subnew" title="新建子文档" onClick={(e) => { e.stopPropagation(); createDoc(doc.name.replace(/\.\w+$/i, '') + ' · 子文档.md', '', doc.id); }}>＋</button>
-            <button className="doc-subnew" title="添加标签" onClick={(e) => { e.stopPropagation(); setTagInputId(tagInputId === doc.id ? null : doc.id); setTagInputVal(''); }}>🏷</button>
-            <button className={'doc-subnew' + ((doc as any).favorite ? ' doc-fav active' : '')} title={(doc as any).favorite ? '取消收藏' : '收藏'} onClick={(e) => { e.stopPropagation(); toggleDocFavorite(doc.id); }}>★</button>
-            <button className="doc-move" title="提升为主文档" onClick={(e) => { e.stopPropagation(); setDocParent(doc.id, null); toast('已提升为主文档', 'ok'); }}>↳</button>
-            <button className="doc-del" title="删除" onClick={(e) => { e.stopPropagation(); deleteDoc(doc.id); toast('已删除「' + doc.name + '」，可在回收站恢复', 'ok'); }}>🗑</button>
+            {/* 操作区绝对定位覆盖：不再挤占布局宽度，文档名可获得完整空间 */}
+            <div className="doc-actions">
+              <button className={'doc-sync ' + (doc.sync !== false ? 'on' : 'off')} title={doc.sync !== false ? '已启用同步' : '已禁用同步'} onClick={(e) => { e.stopPropagation(); toggleDocSync(doc.id); }}>☁</button>
+              <button className="doc-subnew" title="新建子文档" onClick={(e) => { e.stopPropagation(); createDoc(doc.name.replace(/\.\w+$/i, '') + ' · 子文档.md', '', doc.id); }}>＋</button>
+              <button className="doc-subnew" title="添加标签" onClick={(e) => { e.stopPropagation(); setTagInputId(tagInputId === doc.id ? null : doc.id); setTagInputVal(''); }}>🏷</button>
+              <button className={'doc-subnew' + ((doc as any).favorite ? ' doc-fav active' : '')} title={(doc as any).favorite ? '取消收藏' : '收藏'} onClick={(e) => { e.stopPropagation(); toggleDocFavorite(doc.id); }}>★</button>
+              <button className="doc-move" title="提升为主文档" onClick={(e) => { e.stopPropagation(); setDocParent(doc.id, null); toast('已提升为主文档', 'ok'); }}>↳</button>
+              <button className="doc-del" title="删除" onClick={(e) => { e.stopPropagation(); deleteDoc(doc.id); toast('已删除「' + doc.name + '」，可在回收站恢复', 'ok'); }}>🗑</button>
+            </div>
           </div>
         );
       })}
