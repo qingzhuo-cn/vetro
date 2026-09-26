@@ -816,6 +816,19 @@ function Topbar({ commands, onNew, onCycleView, onToggleSidebar, onToggleFocus, 
   const cfg = useStore((s) => s.cfg);
   const setCfg = useStore((s) => s.setCfg);
   const [openCmd, setOpenCmd] = useState(false);
+  // 导出下拉：触发按钮只负责展开菜单，不再直接触发导出
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!exportOpen) return;
+    const close = (e: MouseEvent) => {
+      if (!exportRef.current?.contains(e.target as Node)) setExportOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setExportOpen(false); };
+    document.addEventListener('mousedown', close);
+    window.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', close); window.removeEventListener('keydown', onKey); };
+  }, [exportOpen]);
   const onDragMouseDown = (e: React.MouseEvent) => {
     if (!isTauri || e.button !== 0) return;
     const t = e.target as HTMLElement;
@@ -830,11 +843,11 @@ function Topbar({ commands, onNew, onCycleView, onToggleSidebar, onToggleFocus, 
       </div>
       <div className="topbar-actions">
         <button className="btn ghost" onClick={onNew}>＋ 新建</button>
-        <div className="export-dropdown">
-          <button className="btn ghost" onClick={onExport}>⭳ 导出</button>
+        <div className={'export-dropdown' + (exportOpen ? ' open' : '')} ref={exportRef}>
+          <button className="btn ghost" onClick={() => setExportOpen((v) => !v)}>⭳ 导出</button>
           <div className="export-menu">
-            <button className="export-menu-item" onClick={onExport}>导出当前文档</button>
-            <button className="export-menu-item" onClick={onExportZip}>全部导出 ZIP</button>
+            <button className="export-menu-item" onClick={() => { setExportOpen(false); onExport(); }}>导出当前文档</button>
+            <button className="export-menu-item" onClick={() => { setExportOpen(false); onExportZip(); }}>全部导出 ZIP</button>
           </div>
         </div>
         <button className="btn ghost" onClick={onCycleView}>视图</button>

@@ -80,7 +80,12 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 
 /* ===== 顶栏 ===== */
 .topbar {
-  position: relative; display: flex; align-items: center;
+  /* 必须显式抬层级：backdrop-filter 会让顶栏成为层叠上下文，
+     而工作区里 CodeMirror 的 .cm-editor 是 position:relative，
+     同层级按 DOM 顺序会压过顶栏 —— 下拉菜单伸进工作区后被遮住
+     （实测菜单中心点命中的是 .view-tabs）。 */
+  position: relative; z-index: 60;
+  display: flex; align-items: center;
   padding: 0 0 0 16px; gap: 12px;
   background: var(--glass-bg-lo); backdrop-filter: blur(24px);
   border-bottom: 1px solid var(--glass-border);
@@ -524,7 +529,8 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
   border-radius: 10px; padding: 4px; min-width: 140px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.3); z-index: 50;
 }
-.export-dropdown:hover .export-menu { display: block; }
+.export-dropdown:hover .export-menu,
+.export-dropdown.open .export-menu { display: block; }
 .export-menu-item {
   display: block; width: 100%; text-align: left; padding: 6px 12px;
   border-radius: 8px; font-size: 12px; border: none; background: none;
