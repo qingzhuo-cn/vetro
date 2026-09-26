@@ -4,11 +4,11 @@
 
 # 🥃 Vetro
 
-**玻璃拟态 Markdown 编辑器 · Tauri 2 桌面应用**
+**果冻质感的 Markdown 编辑器 · Tauri 2 桌面应用**
 
-透明 · 轻盈 · 流光
+每一次点击都回弹，每一次切换都流动
 
-[![version](https://img.shields.io/badge/version-v2.6.0-4ecdc4?style=for-the-badge&labelColor=0d1117)](https://github.com/qingzhuo-cn/vetro/releases)
+[![version](https://img.shields.io/badge/version-v2.9.3-4ecdc4?style=for-the-badge&labelColor=0d1117)](https://github.com/qingzhuo-cn/vetro/releases)
 [![tauri](https://img.shields.io/badge/Tauri-2-7c9eff?style=for-the-badge&labelColor=0d1117)](https://tauri.app)
 [![platform](https://img.shields.io/badge/platform-Windows-818cf8?style=for-the-badge&labelColor=0d1117)](https://github.com/qingzhuo-cn/vetro/releases)
 [![license](https://img.shields.io/badge/license-MIT-34d399?style=for-the-badge&labelColor=0d1117)](LICENSE)
@@ -16,7 +16,6 @@
 从 Electron 全面重写为 **Tauri 2** —— 单进程、安装包更小、启动更快、内存占用更低。
 
 **⬇ [下载最新版](https://github.com/qingzhuo-cn/vetro/releases/latest)**
-`Vetro-x.x.x_x64-setup.exe`（Windows） · `.msi` · Linux `.deb` / `.AppImage`
 
 ```bash
 # 从源码 3 步跑起来
@@ -27,11 +26,20 @@ npm install && npm run tauri dev
 
 ---
 
-## 📸 截图
+## 🫧 果冻化交互
 
-<!-- 在此插入应用截图（建议 1280×800，2–3 张：主界面 · 实时预览 · AI 助手）。
-     例如：<img src="assets/screenshots/main.png" width="720" alt="Vetro 主界面"> -->
-主界面 · 实时预览 · AI 助手
+不是贴一张毛玻璃滤镜了事 —— 每个元素都有自己的物理反馈：
+
+| 反馈 | 实现 |
+| --- | --- |
+| 按下回弹 | 挤压动画走 `cubic-bezier(.36,0,.66,-.56)`，横纵缩放分离，模拟果冻形变 |
+| 点击涟漪 | 从按压点扩散的水波反馈 |
+| 列表入场 | 逐条错峰浮起，间隔递增而非齐刷刷 |
+| 悬停浮起 | 按钮整体上浮 2px，与形变动画分轨并行不打架 |
+| 通知悬停 | Toast 进度条悬停即暂停，移开继续走完 |
+| 保存反馈 | 保存中状态呼吸式明灭，完成即静止 |
+
+> 悬停位移**只做纵向**：列表容器的 `overflow-y: auto` 会连带把 `overflow-x` 计算成 `auto`，横向位移会裁掉行尾的删除按钮。
 
 ---
 
@@ -39,23 +47,61 @@ npm install && npm run tauri dev
 
 <div align="center">
 
-| 📚 文档树 | ✍️ Markdown 实时预览 | 🤖 AI 助手 |
+| 📚 文档树 | 🔗 双向链接 | 🏷 标签体系 |
 |:---:|:---:|:---:|
-| 主 / 子文档多级嵌套 | 分栏 / 编辑 / 预览三视图 | 获取模型 + 流式对话 |
-| 一键收起展开、拖拽整理 | 语法高亮 + 安全过滤 | 密钥存系统钥匙串 |
+| 主 / 子文档多级嵌套 | `[[Wiki 链接]]` 语法高亮 | 任意打标签 |
+| 拖拽整理、一键收展 | 预览中点击直达目标文档 | 按标签筛选文档 |
+| 收藏 ★、单独同步开关 | —— | 标签侧栏集中管理 |
 
-| 🔍 全文搜索 | ☁️ WebDAV 同步 | 🎨 主题定制 |
+| 🗂 大纲 | 📎 附件 | 🗑 回收站 |
 |:---:|:---:|:---:|
-| SQLite FTS5 秒搜正文 | 一键上传 / 下载 | 8 色强调 + 4 图标 |
-| 匹配高亮片段预览 | 兼容 Nextcloud 等 | 浅色 / 深色 / 自动 |
+| 按 H1–H6 分级缩进 | 图片集中管理 | 误删可恢复 |
+| 点击跳到对应标题 | 缩略图 / 体积一览 | 支持彻底删除 |
 
-| ⌨️ 查找替换 | 🗂 大纲导航 | 📦 回收站 |
+| 🤖 AI 助手 | ☁️ WebDAV 同步 | 🎨 主题定制 |
 |:---:|:---:|:---:|
-| Ctrl+F 原生搜索面板 | 点击跳到对应标题 | 误删可恢复 |
+| 8 个一键快捷操作 | 智能合并（按修改时间） | **9 套液光主题** |
+| 多平台切换、获取模型 | 测试连接 / 仅上传 / 云端覆盖 | 8 色强调 + 4 图标 |
+| 流式回复、可取消 | 修改后自动同步 | 6 种正文字体 |
 
 </div>
 
-更多：图片粘贴 · 导出合并子文档 · 无边框自定义标题栏 · 插件系统
+更多：图片粘贴 · 导出合并子文档 · 专注模式 · 三视图分栏 · SQLite FTS5 全文搜索 · 无边框标题栏 · 插件系统
+
+---
+
+## 🤖 AI 快捷操作
+
+选中文字或整篇文档，一键执行：
+
+`润色` `续写` `摘要` `英译` `中译` `拟标题` `修正` `解释`
+
+任何 **OpenAI 兼容接口**均可接入 —— 中转站、自建网关、本地服务都行。内置平台预设，可保存多套配置随时切换，流式回复随时取消，回复可一键应用到文档。密钥存系统钥匙串，不落盘。
+
+---
+
+## 🎨 九套液光主题
+
+<center>
+
+| 暗夜 | 晨曦 | 深海 |
+|:---:|:---:|:---:|
+| 樱雪 | 极光 | 拿铁 |
+| 荔枝 | 薄荷 | 葡萄 |
+
+</center>
+
+每套主题独立配置**液光氛围色**与**玻璃边缘透光高光** —— 果冻的通透感正来自边缘透光带色，而非整体染色，所以顶栏、侧栏、AI 面板等所有玻璃表面都会随主题一起变色，而不是只有背景在动。
+
+---
+
+## 🛡 安全
+
+- 文件读写限定在应用数据目录内，且校验扩展名
+- 出站请求拒绝环回地址
+- 响应体上限 16 MB
+- Markdown 渲染经 DOMPurify 净化
+- AI 密钥存系统钥匙串（Windows DPAPI / macOS Keychain）
 
 ---
 
@@ -86,15 +132,15 @@ npm install && npm run tauri dev
 
 ---
 
-## 📥 下载安装
+## 📥 下载
 
 <div align="center">
 
 [![Download](https://img.shields.io/badge/⬇-下载最新版-4ecdc4?style=for-the-badge)](https://github.com/qingzhuo-cn/vetro/releases/latest)
 
-`Vetro-x.x.x_x64-setup.exe`（Windows 推荐） · `Vetro-x.x.x_x64_en-US.msi`
+`Vetro-x.x.x_x64-setup.exe` · `Vetro-x.x.x_x64_en-US.msi`
 
-Linux：`vetro_x.x.x_amd64.deb`（Debian/Ubuntu） · `Vetro_x.x.x_x86_64.AppImage`
+Linux：`vetro_x.x.x_amd64.deb` · `Vetro_x.x.x_x86_64.AppImage`
 
 > Linux 包由 GitHub Actions 自动构建（见 [build-linux.yml](.github/workflows/build-linux.yml)）。鸿蒙版方案见 [HARMONYOS-PORT.md](HARMONYOS-PORT.md)。
 
