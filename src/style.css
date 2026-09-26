@@ -521,7 +521,23 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 }
 .wiki-link:hover { color: var(--accent); border-bottom-color: var(--accent); }
 
-/* ===== 批量导出按钮 ===== */
+/* ===== 插件管理 ===== */
+.settings-hint { font-size: 11.5px; color: var(--fg-3); line-height: 1.6; margin: 0 0 8px; }
+.settings-hint code { font-family: var(--font-family-editor, monospace); background: var(--glass-bg-hi); padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+.plugin-list { display: flex; flex-direction: column; gap: 6px; }
+.plugin-empty { font-size: 12px; color: var(--fg-3); padding: 8px 0; }
+.plugin-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: var(--glass-bg-hi); border: 1px solid var(--glass-border); transition: border-color var(--dur-fast); }
+.plugin-item:hover { border-color: var(--glass-border-hi); }
+.plugin-item.failed { border-color: var(--danger-soft); }
+.plugin-info { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+.plugin-name { font-size: 12.5px; color: var(--fg-0); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plugin-ver { font-size: 11px; color: var(--fg-3); font-family: var(--font-family-editor, monospace); flex: none; }
+.plugin-err { font-size: 11px; color: var(--danger); background: var(--danger-soft); padding: 1px 6px; border-radius: 5px; flex: none; }
+
+/* 示例插件：已勾选待办的删除线 */
+.cm-todo-done { text-decoration: line-through; opacity: .55; }
+
+
 .export-dropdown { position: relative; display: inline-block; }
 .export-menu {
   display: none; position: absolute; top: 100%; right: 0; margin-top: 4px;

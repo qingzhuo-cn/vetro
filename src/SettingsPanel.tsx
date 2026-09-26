@@ -8,6 +8,60 @@ import { checkForUpdates } from './updater';
 import { getVersion, readBinaryFile } from './backend';
 import type { ThemeMode, SyncConfig } from './types';
 import { docTreeContent } from './store';
+import { pm, collectPlugins } from './plugins/index';
+
+function PluginSection() {
+  const [tick, setTick] = useState(0);
+  const [busy, setBusy] = useState('');
+  const plugins = collectPlugins();
+  const statuses = pm.list();
+
+  const toggle = async (id: string, name: string) => {
+    setBusy(id);
+    try {
+      if (pm.isActive(id)) {
+        await pm.deactivate(id);
+      } else {
+        const p = plugins.find((x) => x.id === id);
+        if (p) await pm.activate(p);
+      }
+      setTick((t) => t + 1);
+    } finally { setBusy(''); }
+    void name;
+  };
+
+  const activeCount = statuses.filter((s) => s.state === 'active').length;
+  return (
+    <section className="settings-group">
+      <h3>插件（{activeCount}/{plugins.length} 已启用）</h3>
+      <p className="settings-hint">
+        插件以独立文件置于 <code>src/plugins/</code>，构建期自动收录。
+        启停即时生效，无需重启。
+      </p>
+      <div className="plugin-list">
+        {plugins.length === 0 && <div className="plugin-empty">未发现插件</div>}
+        {plugins.map((p) => {
+          const st = statuses.find((s) => s.id === p.id);
+          const on = pm.isActive(p.id);
+          const failed = st?.state === 'failed';
+          return (
+            <div key={p.id} className={'plugin-item' + (failed ? ' failed' : '')}>
+              <div className="plugin-info">
+                <span className="plugin-name">{p.name}</span>
+                <span className="plugin-ver">v{p.version}</span>
+                {failed && <span className="plugin-err" title={st?.error}>加载失败</span>}
+              </div>
+              <button className={'btn sm ' + (on ? 'ghost' : 'primary')} disabled={busy === p.id}
+                onClick={() => toggle(p.id, p.name)}>
+                {on ? '停用' : '启用'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
 
 function UpdateSection() {
   const [busy, setBusy] = useState(false);
@@ -204,6 +258,8 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
               ))}
             </div>
           </section>
+
+          <PluginSection />
 
           <section className="settings-group visual-theme-group">
             <h3>液态玻璃主题</h3>

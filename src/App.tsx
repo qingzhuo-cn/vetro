@@ -5,7 +5,6 @@ import JSZip from 'jszip';
 import { useStore, buildTree, docTreeContent, childrenOf } from './store';
 import { renderMarkdown, highlightCode, previewElRef, htmlToMarkdown } from './markdown';
 import { createEditor, editorViewRef, jumpToLine } from './editor';
-import { PluginManager } from './plugins';
 import type { Command, RenderHooks } from './plugins';
 import { ACCENTS, ICONS, rgba, lighten, darken } from './presets';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -13,7 +12,7 @@ import type { Doc, AppConfig, ViewMode, FontFamily } from './types';
 import { FONT_FAMILIES } from './types';
 import type { Extension } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import { demoPlugin } from './demo-plugin';
+import { collectPlugins, pm } from './plugins/index';
 import { isTauri, getVersion, secureGet, secureSet, secureDelete, saveFileDialog, writeTextFile, dbInit, dbLoadState, dbSaveState, dbSearch, readBinaryFile, listImagesDir, deleteFile, renameFile, STORAGE_KEY } from './backend';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import AiPanel from './AiPanel';
@@ -32,8 +31,6 @@ let pauseToast: ((id: number) => void) | null = null;
 let resumeToast: ((id: number) => void) | null = null;
 let dismissToast: ((id: number) => void) | null = null;
 function toast(msg: string, kind = '') { pushToast?.(msg, kind); }
-
-const pm = new PluginManager({ toast }, (m) => console.log(m));
 
 const FONT_META: Record<FontFamily, { name: string; stack: string }> = {
   sans: { name: '默认黑体', stack: 'system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif' },
@@ -1005,10 +1002,12 @@ export default function App() {
       }
     })();
     applyTheme(useStore.getState().cfg);
-    pm.activate(demoPlugin).then(() => {
+    pm.activateAll(collectPlugins()).then(({ ok, failed }) => {
       setCommands(pm.commands.all());
       setRenderHooks(pm.renderers.all());
       setEditorExts(pm.editors.all());
+      if (failed > 0) toast(`${failed} 个插件加载失败`, 'err');
+      else if (ok > 0) console.log(`[plugin] ${ok} 个插件已加载`);
     });
     // 从系统密钥链加载 AI 密钥与 WebDAV 密码（不落存储）
     Promise.all([secureGet('ai-key'), secureGet('sync-password')])

@@ -68,6 +68,8 @@ npm install && npm run tauri dev
 
 更多：图片粘贴 · 导出合并子文档 · 专注模式 · 三视图分栏 · SQLite FTS5 全文搜索 · 无边框标题栏 · 插件系统
 
+> 插件系统此前对外宣称 6 个扩展点，实际只有 3 个真正接通，另 3 个是无人读取的空壳注册表。已砍掉空壳、补齐真实能力（错误隔离、启停 UI、插件可用的编辑器 API），详见[插件系统](#%EF%B8%8F-插件系统实验性)。
+
 ---
 
 ## 🤖 AI 快捷操作
@@ -176,8 +178,40 @@ npm run tauri build  # 打包（产物在 src-tauri/target/release/bundle/）
 
 ## 🔌 插件系统（实验性）
 
-插件可注册 **命令**、**渲染钩子**、**编辑器扩展**、**面板 / AI Provider / 同步后端** 等扩展点。
-示例见 [`src/demo-plugin.ts`](src/demo-plugin.ts)。
+插件以独立文件放入 [`src/plugins/`](src/plugins/)，由 Vite 在**构建期静态收录** —— 导出 `default` 插件对象即可，无需改动主程序。新增插件需重新构建，**不是运行时热加载**：Tauri 打包环境下动态执行外部 JS 涉及 CSP 与代码执行安全，本项目不做。
+
+三个已接线的扩展点：
+
+| 扩展点 | 能力 |
+| --- | --- |
+| `ctx.commands` | 命令，出现在顶栏 `⌘` 面板 |
+| `ctx.renderers` | 渲染钩子，介入 Markdown → HTML 管线 |
+| `ctx.editors` | CodeMirror 6 扩展（装饰、按键映射等） |
+
+`ctx.api` 提供宿主能力：`toast` / `insertText` / `getActiveDoc` / `setContent` / `replaceAll` / `log`。
+
+```ts
+import type { VetroPlugin } from '../plugins';
+
+export const myPlugin: VetroPlugin = {
+  id: 'my-plugin',
+  name: '我的插件',
+  version: '1.0.0',
+  activate(ctx) {
+    ctx.commands.register({
+      id: 'my.hello',
+      title: '打个招呼',
+      run: () => ctx.api.insertText('你好，Vetro')
+    });
+  }
+};
+```
+
+设置面板内可**即时启停**插件，无需重启。单个插件激活失败会被隔离并标记，不影响其余插件；失败时已注册的项会被完整回收，不会留下半激活残留。
+
+> 早期版本还声明过 Panel / AiProvider / SyncBackend 三个注册表，但注册后全项目零处读取，属于未兑现的承诺，已删除 —— 这里只保留确实能被消费的扩展点。
+
+示例见 [`src/plugins/demo.ts`](src/plugins/demo.ts)。
 
 ---
 
