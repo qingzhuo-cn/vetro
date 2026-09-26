@@ -34,7 +34,7 @@ export interface IconStyle {
 
 export type ThemeMode = 'auto' | 'dark' | 'light';
 export type ViewMode = 'edit' | 'split' | 'preview';
-export const VISUAL_THEMES = ['midnight', 'dawn', 'ocean', 'sakura', 'aurora', 'mocha'] as const;
+export const VISUAL_THEMES = ['midnight', 'dawn', 'ocean', 'sakura', 'aurora', 'mocha', 'lychee', 'mint', 'grape'] as const;
 export type VisualTheme = (typeof VISUAL_THEMES)[number];
 export const FONT_FAMILIES = ['sans', 'hei', 'kai', 'song', 'fang', 'mono'] as const;
 export type FontFamily = (typeof FONT_FAMILIES)[number];

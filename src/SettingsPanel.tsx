@@ -212,7 +212,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                 <button key={theme} type="button" className={'visual-theme-option' + (cfg.visualTheme === theme ? ' active' : '')}
                   onClick={() => setCfg({ visualTheme: theme })}>
                   <span className={'visual-theme-swatch theme-' + theme} />
-                  <span>{({ midnight: '暗夜', dawn: '晨曦', ocean: '深海', sakura: '樱雪', aurora: '极光', mocha: '拿铁' } as Record<string, string>)[theme]}</span>
+                  <span>{({ midnight: '暗夜', dawn: '晨曦', ocean: '深海', sakura: '樱雪', aurora: '极光', mocha: '拿铁', lychee: '荔枝', mint: '薄荷', grape: '葡萄' } as Record<string, string>)[theme]}</span>
                 </button>
               ))}
             </div>
