@@ -140,6 +140,8 @@ function sanitizeConfig(input: Partial<AppConfig> | undefined): AppConfig {
     },
     focusMode: raw.focusMode === true,
     typewriterMode: raw.typewriterMode === true,
+    glassFx: raw.glassFx !== false,
+    bgMode: raw.bgMode === 'transparent' ? 'transparent' : 'opaque',
   };
 }
 

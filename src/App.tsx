@@ -50,6 +50,11 @@ function resolveTheme(cfg: AppConfig): 'dark' | 'light' {
 function applyTheme(cfg: AppConfig) {
   const resolved = resolveTheme(cfg);
   document.body.dataset.theme = resolved;
+  // 透明窗口物理像素：真透明壳下 body 必须透光，渐变只保留氛围色
+  document.body.dataset.shell = isTauri ? 'tauri' : 'web';
+  // 背景模式：默认不透明；切透明版才透出桌面（窗口本身保持 transparent:true）
+  document.body.dataset.bgmode = cfg.bgMode === 'transparent' ? 'transparent' : 'opaque';
+  document.documentElement.dataset.fx = cfg.glassFx === false ? 'off' : 'on';
   const accent = ACCENTS.find((a) => a.id === cfg.accent) || ACCENTS[0];
   const root = document.documentElement.style;
   root.setProperty('--accent', accent.accent);

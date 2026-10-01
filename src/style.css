@@ -55,13 +55,50 @@ body[data-theme="light"] {
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body, #root { height: 100%; overflow: hidden; }
+/* 真透明窗口物理像素：html 与 body 彻底透光，渐变只保留氛围色。
+   非透明环境（浏览器/H5）保留原 body 渐变，由 data-shell="web" 恢复。
+   背景模式 data-bgmode（仅 Tauri 桌面端由设置切换）：
+   - opaque（默认）：body 铺满常规深色渐变背景，桌面不透；
+   - transparent：body 彻底透明，桌面/壁纸从窗口透过来。 */
+html, body { background: transparent; }
+/* 默认不透明版：Tauri 下也铺满背景 */
+body[data-shell="tauri"][data-bgmode="opaque"] {
+  background:
+    radial-gradient(1100px 620px at -12% -12%, color-mix(in srgb, var(--accent) 28%, transparent), transparent 66%),
+    radial-gradient(900px 600px at 110% 112%, color-mix(in srgb, var(--accent-2) 24%, transparent), transparent 66%),
+    linear-gradient(135deg, var(--bg-0), var(--bg-1) 52%, var(--bg-2));
+}
+body[data-shell="tauri"][data-bgmode="opaque"][data-theme="light"] {
+  background:
+    radial-gradient(1000px 600px at -10% -14%, color-mix(in srgb, var(--accent) 16%, white), transparent 68%),
+    radial-gradient(900px 600px at 110% 110%, color-mix(in srgb, var(--accent-2) 18%, white), transparent 68%),
+    linear-gradient(135deg, var(--bg-0), var(--bg-1) 50%, var(--bg-2));
+}
+/* 完全透明版：body 不铺任何背景，只留面板自身的玻璃材质 */
+body[data-shell="tauri"][data-bgmode="transparent"] {
+  background: transparent;
+}
+body[data-shell="web"] {
+  background:
+    radial-gradient(1100px 620px at -12% -12%, color-mix(in srgb, var(--accent) 28%, transparent), transparent 66%),
+    radial-gradient(900px 600px at 110% 112%, color-mix(in srgb, var(--accent-2) 24%, transparent), transparent 66%),
+    linear-gradient(135deg, var(--bg-0), var(--bg-1) 52%, var(--bg-2));
+}
+body[data-shell="web"][data-theme="light"] {
+  background:
+    radial-gradient(1000px 600px at -10% -14%, color-mix(in srgb, var(--accent) 16%, white), transparent 68%),
+    radial-gradient(900px 600px at 110% 110%, color-mix(in srgb, var(--accent-2) 18%, white), transparent 68%),
+    linear-gradient(135deg, var(--bg-0), var(--bg-1) 50%, var(--bg-2));
+}
 body {
   font-family: var(--font-ui);
-  background: var(--bg-0);
   color: var(--fg-0);
   font-size: 15px;
   -webkit-font-smoothing: antialiased;
 }
+body[data-shell="tauri"][data-bgmode="transparent"] #root { background: transparent; }
+/* 透明版下窗口内容区必须圆角 + 裁剪，否则四个直角露黑底 */
+body[data-shell="tauri"][data-bgmode="transparent"] .app { border-radius: 14px; overflow: hidden; background: transparent; }
 button { font: inherit; color: inherit; cursor: pointer; border: none; background: none; }
 svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
@@ -554,6 +591,21 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 }
 .export-menu-item:hover { background: var(--glass-bg-hi); color: var(--fg-0); }
 
+/* 真透明壳 + 透明版下的面板材质：低 alpha 基底 + 细边框微调，保证桌面/壁纸透过来。
+   不透明版（data-bgmode="opaque"）沿用默认玻璃变量，不做覆盖。 */
+body[data-shell="tauri"][data-bgmode="transparent"] {
+  --glass-bg: rgba(20, 26, 38, 0.34);
+  --glass-bg-hi: rgba(36, 44, 62, 0.44);
+  --glass-bg-lo: rgba(16, 20, 30, 0.26);
+  --glass-blur: 22px;
+  --glass-saturate: 160%;
+}
+body[data-shell="tauri"][data-bgmode="transparent"][data-theme="light"] {
+  --glass-bg: rgba(255, 255, 255, 0.42);
+  --glass-bg-hi: rgba(255, 255, 255, 0.60);
+  --glass-bg-lo: rgba(245, 248, 253, 0.32);
+}
+
 /* ============================================================
    琉璃墨 × Vetro Liquid Glass fusion layer（追加覆盖层）
    ============================================================ */
@@ -566,19 +618,24 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
   --pane-ratio: 50%;
 }
 
-body {
+body[data-shell="web"] {
   background:
     radial-gradient(1100px 620px at -12% -12%, color-mix(in srgb, var(--accent) 28%, transparent), transparent 66%),
     radial-gradient(900px 600px at 110% 112%, color-mix(in srgb, var(--accent-2) 24%, transparent), transparent 66%),
     linear-gradient(135deg, var(--bg-0), var(--bg-1) 52%, var(--bg-2));
 }
-body[data-theme="light"] {
+body[data-shell="web"][data-theme="light"] {
   background:
     radial-gradient(1000px 600px at -10% -14%, color-mix(in srgb, var(--accent) 16%, white), transparent 68%),
     radial-gradient(900px 600px at 110% 110%, color-mix(in srgb, var(--accent-2) 18%, white), transparent 68%),
     linear-gradient(135deg, var(--bg-0), var(--bg-1) 50%, var(--bg-2));
 }
 
+/* 真透明壳 + 透明版：氛围层改为薄雾，不再压暗桌面；body 背景已彻底透明。 */
+body[data-shell="tauri"][data-bgmode="transparent"] .app:before {
+  opacity: .55;
+  filter: blur(2px) saturate(1.15);
+}
 /* 六套液态玻璃主题：只叠加氛围色，不影响明暗对比模式 */
 .app:before {
   content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
@@ -819,7 +876,7 @@ body.is-resizing .editor-panes > * { pointer-events: none; }
 .ai-model-chip, .ai-platform-chip, .ai-saved-item, .ai-switch-item,
 .cmd-item, .winbtn, .img-menu button, .export-menu-item, .visual-theme-option,
 .outline-item, .attachment-item {
-  position: relative; overflow: hidden;
+  overflow: hidden;
 }
 .btn::after, .sidebar-tab::after, .tab::after, .cmd-item::after, .img-menu button::after {
   content: ""; position: absolute; left: 50%; top: 50%;
@@ -903,6 +960,108 @@ body.is-resizing .editor-panes > * { pointer-events: none; }
   outline-offset: 2px;
 }
 .btn:focus-visible, .sidebar-tab:focus-visible, .tab:focus-visible { outline-offset: 3px; }
+/* 键盘聚焦的按键同样给中心反光（无鼠标时可访问性对等） */
+html[data-fx="on"] .btn:focus-visible::before, html[data-fx="on"] .cmd-item:focus-visible::before,
+html[data-fx="on"] .ai-model-chip:focus-visible::before, html[data-fx="on"] .ai-platform-chip:focus-visible::before,
+html[data-fx="on"] .tag-chip:focus-visible::before, html[data-fx="on"] .sidebar-tab:focus-visible::before,
+html[data-fx="on"] .tab:focus-visible::before {
+  opacity: 1;
+}
+
+/* ============================================================
+   按键层：透明液态玻璃 + 悬停浮起 + 鼠标追踪反光
+   设计约束：
+   - 反光只用 ::before（按钮已占用 ::after 做涟漪），不新增 DOM；
+   - 浮起限定在 .btn / .cmd-item / .winbtn / AI chips，不动文档行布局；
+   - 鼠标坐标由顶层单监听器以 rAF 节流写入 CSS 变量，
+     阴影/渐变全部走 compositor 友好的 transform/opacity/渐变位置；
+   - data-fx="off" 或减少动态效果时退化为基础悬停，无 JS 依赖。
+   ============================================================ */
+
+/* 出口保证：带反光层的按键自建层叠上下文，
+   否则 ::before 的 z-index:-1 会掉到按钮背景后面、整颗按钮后面去。
+   逐个核对过：这些类原先全是 position:static（无功能性定位），
+   唯一例外 .doc-actions 本来就有定位需求但它不做反光，未列入。*/
+.btn, .cmd-item, .winbtn,
+.ai-model-chip, .ai-platform-chip, .ai-saved-item, .ai-switch-item,
+.accent-swatch, .icon-option, .visual-theme-option, .font-option,
+.tag-chip, .sidebar-tab, .tab,
+.trash-item, .outline-item, .attachment-item, .img-menu button, .export-menu-item,
+.search-item, .doc-more {
+  position: relative;
+  /* 默认先给一层几乎看不见的静态高光，避免首帧变量未注入时闪烁 */
+  --sheen: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.10), transparent 55%);
+  isolation: isolate;
+}
+/* ::before 做鼠标反光层：z-index:-1 + 父级 isolation，锁在“按钮背景之上、文字之下”，
+   纯文本按钮也不会被反光盖住发虚，无需改 DOM。分支 B 的列表项/菜单小项同样适用。 */
+.btn::before, .cmd-item::before, .winbtn::before,
+.ai-model-chip::before, .ai-platform-chip::before, .ai-saved-item::before, .ai-switch-item::before,
+.accent-swatch::before, .icon-option::before, .visual-theme-option::before, .font-option::before,
+.tag-chip::before, .sidebar-tab::before, .tab::before,
+.trash-item::before, .outline-item::before, .attachment-item::before,
+.img-menu button::before, .export-menu-item::before, .search-item::before, .doc-more::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  border-radius: inherit; pointer-events: none;
+  background: var(--sheen);
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+html[data-fx="on"] .btn:hover::before, html[data-fx="on"] .cmd-item:hover::before,
+html[data-fx="on"] .winbtn:hover::before,
+html[data-fx="on"] .ai-model-chip:hover::before, html[data-fx="on"] .ai-platform-chip:hover::before,
+html[data-fx="on"] .ai-saved-item:hover::before, html[data-fx="on"] .ai-switch-item:hover::before,
+html[data-fx="on"] .accent-swatch:hover::before, html[data-fx="on"] .icon-option:hover::before,
+html[data-fx="on"] .visual-theme-option:hover::before, html[data-fx="on"] .font-option:hover::before,
+html[data-fx="on"] .tag-chip:hover::before, html[data-fx="on"] .sidebar-tab:hover::before,
+html[data-fx="on"] .tab:hover::before,
+html[data-fx="on"] .trash-item:hover::before, html[data-fx="on"] .outline-item:hover::before,
+html[data-fx="on"] .attachment-item:hover::before, html[data-fx="on"] .img-menu button:hover::before,
+html[data-fx="on"] .export-menu-item:hover::before, html[data-fx="on"] .search-item:hover::before,
+html[data-fx="on"] .doc-more:hover::before {
+  opacity: 1;
+}
+
+/* 悬停浮起：只对按键层做 translate + 阴影加深；文档行保持原样不浮 */
+html[data-fx="on"] .btn:hover, html[data-fx="on"] .cmd-item:hover,
+html[data-fx="on"] .ai-model-chip:hover, html[data-fx="on"] .ai-platform-chip:hover,
+html[data-fx="on"] .ai-saved-item:hover, html[data-fx="on"] .ai-switch-item:hover,
+html[data-fx="on"] .accent-swatch:hover, html[data-fx="on"] .icon-option:hover,
+html[data-fx="on"] .visual-theme-option:hover, html[data-fx="on"] .font-option:hover,
+html[data-fx="on"] .tag-chip:hover, html[data-fx="on"] .sidebar-tab:hover,
+html[data-fx="on"] .tab:hover {
+  translate: 0 -2px;
+}
+html[data-fx="on"] .btn.ghost:hover {
+  box-shadow: 0 6px 0 rgba(0,0,0,0.16), 0 16px 30px rgba(0,0,0,0.38), 0 0 0 1px var(--glass-border-hi);
+}
+html[data-fx="on"] .btn.primary:hover {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.34), 0 7px 0 rgba(0,0,0,0.16), 0 18px 34px var(--accent-glow);
+}
+/* 顶栏系统按钮是通栏高度，浮起会抖边框，只做发光不位移 */
+html[data-fx="on"] .winbtn:hover { translate: none; }
+
+/* data-fx="off"：关掉浮起与反光，仅保留颜色/边框等基础悬停 */
+html[data-fx="off"] .btn:hover, html[data-fx="off"] .cmd-item:hover,
+html[data-fx="off"] .winbtn:hover,
+html[data-fx="off"] .ai-model-chip:hover, html[data-fx="off"] .ai-platform-chip:hover,
+html[data-fx="off"] .ai-saved-item:hover, html[data-fx="off"] .ai-switch-item:hover,
+html[data-fx="off"] .accent-swatch:hover, html[data-fx="off"] .icon-option:hover,
+html[data-fx="off"] .visual-theme-option:hover, html[data-fx="off"] .font-option:hover,
+html[data-fx="off"] .tag-chip:hover, html[data-fx="off"] .sidebar-tab:hover,
+html[data-fx="off"] .tab:hover {
+  translate: none;
+}
+
+/* 减少动态效果：反光/涟漪/位移全部停掉，同时降低背景动态层成本 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+  .app-bg { display: none; }
+  .btn::before, .cmd-item::before, .winbtn::before,
+  .ai-model-chip::before, .ai-platform-chip::before, .ai-saved-item::before, .ai-switch-item::before,
+  .accent-swatch::before, .icon-option::before, .visual-theme-option::before, .font-option::before,
+  .tag-chip::before, .sidebar-tab::before, .tab::before { display: none; }
+}
 
 /* 保存状态：保存中呼吸脉冲 */
 @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.42; } }

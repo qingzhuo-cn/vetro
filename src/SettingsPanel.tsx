@@ -257,6 +257,20 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                 </button>
               ))}
             </div>
+            <div className="settings-row" style={{ marginTop: 8 }}>
+              <button className={'btn sm ' + (cfg.glassFx !== false ? 'primary' : 'ghost')}
+                title="关闭后按键只保留基础悬停，不追踪鼠标、不做浮起"
+                onClick={() => setCfg({ glassFx: cfg.glassFx === false })}>
+                {cfg.glassFx === false ? '✦ 特效：关' : '✦ 特效：开'}
+              </button>
+              {typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window && (
+                <button className={'btn sm ' + (cfg.bgMode === 'transparent' ? 'primary' : 'ghost')}
+                  title="透明版：桌面/壁纸从窗口透过来；不透明版：常规深色背景"
+                  onClick={() => setCfg({ bgMode: cfg.bgMode === 'transparent' ? 'opaque' : 'transparent' })}>
+                  {cfg.bgMode === 'transparent' ? '◐ 背景：透明' : '◑ 背景：不透明'}
+                </button>
+              )}
+            </div>
           </section>
 
           <PluginSection />

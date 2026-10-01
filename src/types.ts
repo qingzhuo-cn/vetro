@@ -103,6 +103,10 @@ export interface AppConfig {
   focusMode: boolean;
   /** 打字机模式：光标所在行始终保持在视口中央 */
   typewriterMode: boolean;
+  /** 按键浮起与鼠标反光（纯 CSS 变量 + rAF，关闭后仅保留基础悬停） */
+  glassFx: boolean;
+  /** 窗口背景：opaque = 不透明（默认），transparent = 完全透明版（桌面透过来） */
+  bgMode: 'opaque' | 'transparent';
 }
 
 export function defaultConfig(): AppConfig {
@@ -123,6 +127,8 @@ export function defaultConfig(): AppConfig {
     sync: { enabled: false, url: '', username: '', password: '', autosync: false, lastSync: 0 },
     focusMode: false,
     typewriterMode: false,
+    glassFx: true,
+    bgMode: 'opaque',
   };
 }
 
