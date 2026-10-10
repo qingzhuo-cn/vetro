@@ -99,7 +99,7 @@ Three extension points: `ctx.commands` (command panel), `ctx.renderers` (render 
 
 Enable or disable plugins instantly in Settings with no restart; a failing plugin is isolated without affecting the rest.
 
-> Collected statically at build time, not runtime hot-loading — dynamically executing external JS inside a packaged app raises CSP and code-execution safety issues, which this project deliberately avoids.
+> Collected statically at build time, not runtime hot-loading — dynamically executing external JS inside a packaged app raises CSP and code-execution safety issues.
 
 ## 🛡 Security
 
